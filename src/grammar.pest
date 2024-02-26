@@ -22,7 +22,7 @@ operation = _{
 
 literal = { num | boolean }
 expr = { term ~ (operation ~ term)* }
-term = _{ ident | literal | "(" ~ expr ~ ")" }
+term = _{ literal | ident | "(" ~ expr ~ ")" }
 
 let_binding = { "let" ~ ident ~ "=" ~ expr }
 var_binding = { "var" ~ ident ~ "=" ~ expr }

@@ -4,7 +4,7 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
-use crate::{Literal, RuntimeError};
+use super::{Literal, RuntimeError};
 
 impl Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -131,9 +131,7 @@ impl Literal {
     pub fn cmp_op(self, other: Literal, target_ord: Ordering, negated: bool) -> Option<Literal> {
         match self.partial_cmp(other)? {
             Err(e) => Some(e),
-            Ok(ord) => Some(Literal::Boolean(
-                (ord == target_ord) ^ negated
-            )),
+            Ok(ord) => Some(Literal::Boolean((ord == target_ord) ^ negated)),
         }
     }
     fn partial_cmp(self, other: Literal) -> Option<Result<Ordering, Literal>> {
@@ -147,9 +145,9 @@ impl Literal {
 
             (Literal::Throw(_), Literal::Throw(_)) => return None,
             (e @ Literal::Throw(_), _) | (_, e @ Literal::Throw(_)) => Err(e),
-            (Literal::Boolean(_), _) | (_, Literal::Boolean(_)) => {
-                Err(Literal::Throw(RuntimeError::InvalidOperation("compare", "boolean")))
-            }
+            (Literal::Boolean(_), _) | (_, Literal::Boolean(_)) => Err(Literal::Throw(
+                RuntimeError::InvalidOperation("compare", "boolean"),
+            )),
         })
     }
 }
