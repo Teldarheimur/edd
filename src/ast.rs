@@ -94,9 +94,6 @@ impl Expr {
                 hashes.push(hash);
             }
         }
-        if hashes.len() > 1 {
-            println!("{}", hashes.len());
-        }
         self
     }
     fn eval_const_inner<F: FnMut(&str) -> Expr>(self, lookup: &mut F) -> Self {

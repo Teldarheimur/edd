@@ -63,6 +63,13 @@ impl EddParser {
                 Rule::literal => Expr::Val(Self::parse_literal(primary.into_inner())),
                 Rule::ident => Expr::Ident(primary.as_str().to_owned()),
                 Rule::expr => Self::parse_expr(primary.into_inner()),
+                Rule::r#if => {
+                    let mut pairs = primary.into_inner();
+                    let c = Self::parse_expr(pairs.next().unwrap().into_inner());
+                    let t = Self::parse_expr(pairs.next().unwrap().into_inner());
+                    let e = Self::parse_expr(get_only_one(pairs).into_inner());
+                    Expr::If(Box::new(c), Box::new(t), Box::new(e))
+                }
                 r => unreachable!("{r:?}"),
             })
             .map_infix(|lhs, op, rhs| match op.as_rule() {
