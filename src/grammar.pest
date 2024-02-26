@@ -1,0 +1,35 @@
+num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
+    int = { ("+" | "-")? ~ ASCII_DIGIT+ }
+
+boolean = @{ "true" | "false" }
+ident = @{ ALPHABETIC ~ (ALPHABETIC | ASCII_DIGIT )* }
+
+operation = _{
+    add | subtract | multiply | divide | power |
+    eq | neq | lt | lte | gt | gte
+}
+    add      = { "+" }
+    subtract = { "-" }
+    multiply = { "*" }
+    divide   = { "/" }
+    power    = { "^" }
+    eq       = { "==" }
+    neq      = { "!=" }
+    lt       = { "<" }
+    lte      = { "<=" }
+    gt       = { ">" }
+    gte      = { ">=" }
+
+literal = { num | boolean }
+expr = { term ~ (operation ~ term)* }
+term = _{ ident | literal | "(" ~ expr ~ ")" }
+
+let_binding = { "let" ~ ident ~ "=" ~ expr }
+var_binding = { "var" ~ ident ~ "=" ~ expr }
+rebinding = { ident ~ "=" ~ expr }
+
+query = _{ SOI ~
+    (let_binding | var_binding | rebinding | expr)
+~ EOI }
+
+WHITESPACE = _{ " " | "\t" }
