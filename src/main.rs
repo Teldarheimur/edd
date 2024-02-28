@@ -1,7 +1,7 @@
 use edd::{
-    ast::{Literal, Query, RuntimeError},
+    ast::Query,
     parse::parse,
-    rt::SymbolTable,
+    rt::{SymbolTable, RuntimeError},
 };
 
 use std::io::{stdout, BufRead, Write};
@@ -35,34 +35,25 @@ fn qprocess(q: Query, symtab: &mut SymbolTable) -> Result<(), RuntimeError> {
     let lookup = |n: &'_ str| symtab
         .lookup(n)
         .cloned()
-        .unwrap_or(Literal::Throw(RuntimeError::UndefinedVariable));
+        .ok_or(RuntimeError::UndefinedVariable);
 
     match q {
         Query::Inquire(e) => {
             println!(
                 " = {}",
-                e.eval(lookup)
+                e.eval(lookup)?
             );
         }
         Query::Let(n, expr) => {
-            let expr = expr.eval(lookup);
-            if let Literal::Throw(e) = expr {
-                return Err(e);
-            }
+            let expr = expr.eval(lookup)?;
             symtab.add_var(false, n, expr);
         }
         Query::Var(n, expr) => {
-            let expr = expr.eval(lookup);
-            if let Literal::Throw(e) = expr {
-                return Err(e);
-            }
+            let expr = expr.eval(lookup)?;
             symtab.add_var(true, n, expr);
         }
         Query::Rebind(n, expr) => {
-            let expr = expr.eval(lookup);
-            if let Literal::Throw(e) = expr {
-                return Err(e);
-            }
+            let expr = expr.eval(lookup)?;
             if !symtab.mutate(&n, expr) {
                 println!("{n} is not mutable");
             }

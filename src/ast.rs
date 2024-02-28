@@ -3,6 +3,8 @@ use std::fmt::{self, Display};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::i128;
 
+use crate::rt::RuntimeError;
+
 #[derive(Debug, Clone)]
 pub enum Query {
     Inquire(Expr),
@@ -11,23 +13,11 @@ pub enum Query {
     Rebind(String, Expr),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RuntimeError {
-    DivideByZero,
-    ZeroToTheZeroeth,
-    ExpectedBooleanInCond,
-    NoSuchVar,
-    IntOverflow(&'static str, i128, i128),
-    InvalidOperation(&'static str, &'static str),
-    UndefinedVariable,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum Literal {
     Integer(i128),
     Float(f64),
     Boolean(bool),
-    Throw(RuntimeError),
 }
 
 impl Hash for Literal {
@@ -37,7 +27,6 @@ impl Hash for Literal {
             Literal::Float(f) => state.write_u64(f.to_bits()),
             Literal::Integer(i) => i.hash(state),
             Literal::Boolean(i) => i.hash(state),
-            Literal::Throw(i) => i.hash(state),
         }
     }
 }
@@ -66,17 +55,20 @@ pub enum Expr {
     Lte(Box<Self>, Box<Self>),
     Gt(Box<Self>, Box<Self>),
     Gte(Box<Self>, Box<Self>),
+
+    /// Not parsed
+    Raise(RuntimeError)
 }
 
 fn try_binop<F, F2>(a: Expr, b: Expr, binop: F, fallback: F2) -> Expr
 where
-    F: FnOnce(Literal, Literal) -> Option<Literal>,
+    F: FnOnce(Literal, Literal) -> Result<Literal, RuntimeError>,
     F2: FnOnce(Box<Expr>, Box<Expr>) -> Expr,
 {
     match (a, b) {
         (Expr::Val(a), Expr::Val(b)) => binop(a, b)
             .map(Expr::Val)
-            .unwrap_or_else(|| fallback(Box::new(Expr::Val(a)), Box::new(Expr::Val(b)))),
+            .unwrap_or_else(|e| Expr::Raise(e)),
         (a, b) => fallback(Box::new(a), Box::new(b)),
     }
 }
@@ -107,6 +99,7 @@ impl Expr {
         match self {
             Expr::Ident(i) => lookup(&i),
             Expr::Val(v) => Expr::Val(v),
+            Expr::Raise(e) => Expr::Raise(e),
             Expr::Add(a, b) => {
                 let a = a.eval_const_inner(lookup);
                 let b = b.eval_const_inner(lookup);
@@ -146,7 +139,7 @@ impl Expr {
                 let b = b.eval_const_inner(lookup);
 
                 if b.is_const_zero() {
-                    Expr::Val(Literal::Throw(RuntimeError::DivideByZero))
+                    Expr::Raise(RuntimeError::DivideByZero)
                 } else if b.is_const_one() {
                     a
                 } else {
@@ -163,7 +156,7 @@ impl Expr {
                     (false, false) => try_binop(a, b, Literal::pow, Expr::Pow),
                     (true, false) => Expr::Val(Literal::Integer(0)),
                     (false, true) => Expr::Val(Literal::Integer(1)),
-                    (true, true) => Expr::Val(Literal::Throw(RuntimeError::ZeroToTheZeroeth)),
+                    (true, true) => Expr::Raise(RuntimeError::ZeroToTheZeroeth),
                 }
             }
             Expr::If(cond, if_true, if_false) => {
@@ -172,7 +165,7 @@ impl Expr {
                 match cond {
                     Expr::Val(Literal::Boolean(true)) => if_true.eval_const_inner(lookup),
                     Expr::Val(Literal::Boolean(false)) => if_false.eval_const_inner(lookup),
-                    Expr::Val(_) => Expr::Val(Literal::Throw(RuntimeError::ExpectedBooleanInCond)),
+                    Expr::Val(_) => Expr::Raise(RuntimeError::ExpectedBooleanInCond),
                     c => Expr::If(
                         Box::new(c),
                         Box::new(if_true.eval_const_inner(lookup)),
@@ -184,7 +177,7 @@ impl Expr {
                 let rhs = rhs.eval_const_inner(lookup);
                 match rhs {
                     Expr::Val(Literal::Boolean(b)) => Expr::Val(Literal::Boolean(!b)),
-                    Expr::Val(_) => Expr::Val(Literal::Throw(RuntimeError::InvalidOperation("not", "non-boolean"))),
+                    Expr::Val(_) => Expr::Raise(RuntimeError::InvalidOperation("not", "non-boolean")),
                     _ => Expr::Not(Box::new(rhs)),
                 }
             }
@@ -195,10 +188,10 @@ impl Expr {
             Expr::Neg(rhs) => {
                 let rhs = rhs.eval_const_inner(lookup);
                 match rhs {
-                    Expr::Val(Literal::Integer(i @ i128::MAX)) => Expr::Val(Literal::Throw(RuntimeError::IntOverflow("neg", i, 0))),
+                    Expr::Val(Literal::Integer(i @ i128::MAX)) => Expr::Raise(RuntimeError::IntOverflow("neg", i, 0)),
                     Expr::Val(Literal::Integer(i)) => Expr::Val(Literal::Integer(-i)),
                     Expr::Val(Literal::Float(f)) => Expr::Val(Literal::Float(f)),
-                    Expr::Val(_) => Expr::Val(Literal::Throw(RuntimeError::InvalidOperation("neg", "non-numeral"))),
+                    Expr::Val(_) => Expr::Raise(RuntimeError::InvalidOperation("neg", "non-numeral")),
                     _ => Expr::Neg(Box::new(rhs)),
                 }
             }
@@ -281,6 +274,7 @@ impl Display for Expr {
             Expr::Ref(a) => write!(f, "&{a}"),
             Expr::Neg(a) => write!(f, "-{a}"),
             Expr::Deref(a) => write!(f, "*{a}"),
+            Expr::Raise(e) => write!(f, "raise(error({e}))"),
         }
     }
 }

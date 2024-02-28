@@ -1,6 +1,17 @@
 use std::{cmp::Ordering, collections::HashMap};
 
-use crate::ast::{Expr, Literal, RuntimeError};
+use crate::ast::{Expr, Literal};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RuntimeError {
+    DivideByZero,
+    ZeroToTheZeroeth,
+    ExpectedBooleanInCond,
+    NoSuchVar,
+    IntOverflow(&'static str, i128, i128),
+    InvalidOperation(&'static str, &'static str),
+    UndefinedVariable,
+}
 
 #[derive(Debug, Clone)]
 struct Variable {
@@ -43,100 +54,50 @@ impl SymbolTable {
 }
 
 impl Expr {
-    pub fn eval<F: FnMut(&str) -> Literal>(self, mut lookup: F) -> Literal {
+    pub fn eval<F: FnMut(&str) -> Result<Literal, RuntimeError>>(self, mut lookup: F) -> Result<Literal, RuntimeError> {
         self.eval_inner(&mut lookup)
     }
-    fn eval_inner<F: FnMut(&str) -> Literal>(self, lookup: &mut F) -> Literal {
+    fn eval_inner<F: FnMut(&str) -> Result<Literal, RuntimeError>>(self, lookup: &mut F) -> Result<Literal, RuntimeError> {
         match self {
             Expr::Ident(i) => lookup(&i),
-            Expr::Val(v) => v,
-            Expr::Add(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-
-                (a + b).unwrap_or( a)
-            }
-            Expr::Sub(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-
-                (a - b).unwrap_or(a)
-            }
-            Expr::Mul(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-
-                (a * b).unwrap_or(a)
-            }
-            Expr::Div(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-
-                (a / b).unwrap_or(a)
-            }
-            Expr::Pow(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-
-                a.pow(b).unwrap_or(a)
-            }
+            Expr::Val(v) => Ok(v),
+            Expr::Raise(e) => Err(e),
+            Expr::Add(a, b) => a.eval_inner(lookup)? + b.eval_inner(lookup)?,
+            Expr::Sub(a, b) => a.eval_inner(lookup)? - b.eval_inner(lookup)?,
+            Expr::Mul(a, b) => a.eval_inner(lookup)? * b.eval_inner(lookup)?,
+            Expr::Div(a, b) => a.eval_inner(lookup)? / b.eval_inner(lookup)?,
+            Expr::Pow(a, b) => a.eval_inner(lookup)?.pow(b.eval_inner(lookup)?),
             Expr::If(cond, if_true, if_false) => {
-                let cond = cond.eval_inner(lookup);
+                let cond = cond.eval_inner(lookup)?;
 
                 match cond {
                     Literal::Boolean(true) => if_true.eval_inner(lookup),
                     Literal::Boolean(false) => if_false.eval_inner(lookup),
-                    _ => Literal::Throw(RuntimeError::ExpectedBooleanInCond),
+                    _ => Err(RuntimeError::ExpectedBooleanInCond),
                 }
             }
             Expr::Not(rhs) => {
-                let rhs = rhs.eval_inner(lookup);
-                match rhs {
-                    Literal::Boolean(b) => Literal::Boolean(!b),
-                    _ => Literal::Throw(RuntimeError::InvalidOperation("not", "non-boolean")),
+                match rhs.eval_inner(lookup)? {
+                    Literal::Boolean(b) => Ok(Literal::Boolean(!b)),
+                    _ => Err(RuntimeError::InvalidOperation("not", "non-boolean")),
                 }
             }
             Expr::Neg(rhs) => {
-                let rhs = rhs.eval_inner(lookup);
-                match rhs {
-                    Literal::Integer(i @ i128::MAX) => Literal::Throw(RuntimeError::IntOverflow("neg", i, 0)),
-                    Literal::Integer(i) => Literal::Integer(-i),
-                    Literal::Float(f) => Literal::Float(f),
-                    _ => Literal::Throw(RuntimeError::InvalidOperation("neg", "non-numeral")),
+                match rhs.eval_inner(lookup)? {
+                    Literal::Integer(i @ i128::MAX) => Err(RuntimeError::IntOverflow("neg", i, 0)),
+                    Literal::Integer(i) => Ok(Literal::Integer(-i)),
+                    Literal::Float(f) => Ok(Literal::Float(-f)),
+                    _ => Err(RuntimeError::InvalidOperation("neg", "non-numeral")),
                 }
             }
             Expr::Ref(_rhs) => todo!(),
             Expr::Deref(_rhs) => todo!(),
-            Expr::Eq(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-                a.cmp_op(b, Ordering::Equal, false).unwrap_or(a)
-            },
-            Expr::Neq(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-                a.cmp_op(b, Ordering::Equal, true).unwrap_or(a)
-            },
-            Expr::Lt(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-                a.cmp_op(b, Ordering::Less, false).unwrap_or(a)
-            },
-            Expr::Lte(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-                a.cmp_op(b, Ordering::Greater, true).unwrap_or(a)
-            },
-            Expr::Gt(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-                a.cmp_op(b, Ordering::Greater, false).unwrap_or(a)
-            },
-            Expr::Gte(a, b) => {
-                let a = a.eval_inner(lookup);
-                let b = b.eval_inner(lookup);
-                a.cmp_op(b, Ordering::Less, true).unwrap_or(a)
-            },
+            Expr::Eq(a, b) => a.eval_inner(lookup)?.cmp_op(b.eval_inner(lookup)?, Ordering::Equal, false),
+            Expr::Neq(a, b) => a.eval_inner(lookup)?.cmp_op(b.eval_inner(lookup)?, Ordering::Equal, true),
+            Expr::Lt(a, b) => a.eval_inner(lookup)?.cmp_op(b.eval_inner(lookup)?, Ordering::Less, false),
+            Expr::Lte(a, b) => a.eval_inner(lookup)?.cmp_op(b.eval_inner(lookup)?, Ordering::Greater, true),
+            Expr::Gt(a, b) => a.eval_inner(lookup)?.cmp_op(b.eval_inner(lookup)?, Ordering::Greater, false),
+            Expr::Gte(a, b) => a.eval_inner(lookup)?.cmp_op(b.eval_inner(lookup)?, Ordering::Less, true),
         }
     }
 }
