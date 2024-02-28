@@ -20,13 +20,20 @@ operation = _{
     gt       = { ">" }
     gte      = { ">=" }
 
+unop = _{ neg | not | ref | deref }
+    not   = { "!" }
+    ref   = { "&" }
+    neg   = { "-" }
+    deref = { "*" }
+
 if = {
     "if" ~ expr ~ ":" ~ expr ~ "else" ~ expr
 }
 
 literal = { num | boolean }
-expr = { term ~ (operation ~ term)* }
-term = _{ literal | if | ident | "(" ~ expr ~ ")" }
+expr = { term ~ (operation ~ term)*}
+term = _{ literal | if | ident | unop ~ term | "(" ~ expr ~ ")" }
+
 
 let_binding = { "let" ~ ident ~ "=" ~ expr }
 var_binding = { "var" ~ ident ~ "=" ~ expr }

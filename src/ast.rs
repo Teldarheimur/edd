@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt::{self, Display};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::i128;
 
 #[derive(Debug, Clone)]
 pub enum Query {
@@ -18,6 +19,7 @@ pub enum RuntimeError {
     NoSuchVar,
     IntOverflow(&'static str, i128, i128),
     InvalidOperation(&'static str, &'static str),
+    UndefinedVariable,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -51,6 +53,11 @@ pub enum Expr {
     Mul(Box<Self>, Box<Self>),
     Div(Box<Self>, Box<Self>),
     Pow(Box<Self>, Box<Self>),
+
+    Not(Box<Self>),
+    Ref(Box<Self>),
+    Neg(Box<Self>),
+    Deref(Box<Self>),
 
     If(Box<Self>, Box<Self>, Box<Self>),
     Eq(Box<Self>, Box<Self>),
@@ -173,6 +180,32 @@ impl Expr {
                     ),
                 }
             }
+            Expr::Not(rhs) => {
+                let rhs = rhs.eval_const_inner(lookup);
+                match rhs {
+                    Expr::Val(Literal::Boolean(b)) => Expr::Val(Literal::Boolean(!b)),
+                    Expr::Val(_) => Expr::Val(Literal::Throw(RuntimeError::InvalidOperation("not", "non-boolean"))),
+                    _ => Expr::Not(Box::new(rhs)),
+                }
+            }
+            Expr::Ref(rhs) => {
+                let rhs = rhs.eval_const_inner(lookup);
+                Expr::Ref(Box::new(rhs))
+            }
+            Expr::Neg(rhs) => {
+                let rhs = rhs.eval_const_inner(lookup);
+                match rhs {
+                    Expr::Val(Literal::Integer(i @ i128::MAX)) => Expr::Val(Literal::Throw(RuntimeError::IntOverflow("neg", i, 0))),
+                    Expr::Val(Literal::Integer(i)) => Expr::Val(Literal::Integer(-i)),
+                    Expr::Val(Literal::Float(f)) => Expr::Val(Literal::Float(f)),
+                    Expr::Val(_) => Expr::Val(Literal::Throw(RuntimeError::InvalidOperation("neg", "non-numeral"))),
+                    _ => Expr::Neg(Box::new(rhs)),
+                }
+            }
+            Expr::Deref(rhs) => {
+                let rhs = rhs.eval_const_inner(lookup);
+                Expr::Deref(Box::new(rhs))
+            }
             Expr::Eq(a, b) => try_binop(
                 a.eval_const_inner(lookup),
                 b.eval_const_inner(lookup),
@@ -244,6 +277,10 @@ impl Display for Expr {
             Expr::Lte(a, b) => write!(f, "({a} <= {b})"),
             Expr::Gt(a, b) => write!(f, "({a} > {b})"),
             Expr::Gte(a, b) => write!(f, "({a} >= {b})"),
+            Expr::Not(a) => write!(f, "!{a}"),
+            Expr::Ref(a) => write!(f, "&{a}"),
+            Expr::Neg(a) => write!(f, "-{a}"),
+            Expr::Deref(a) => write!(f, "*{a}"),
         }
     }
 }

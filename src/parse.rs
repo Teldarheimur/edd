@@ -16,16 +16,17 @@ lazy_static! {
         use Rule::*;
 
         PrattParser::new()
-            .op(Op::infix(add, Left) | Op::infix(subtract, Left))
-            .op(Op::infix(multiply, Left) | Op::infix(divide, Left))
-            .op(Op::infix(power, Right))
             .op(Op::infix(eq, Left)
                 | Op::infix(neq, Left)
                 | Op::infix(lt, Left)
                 | Op::infix(lte, Left)
                 | Op::infix(gt, Left)
                 | Op::infix(gte, Left))
-    };
+            .op(Op::infix(add, Left) | Op::infix(subtract, Left))
+            .op(Op::infix(multiply, Left) | Op::infix(divide, Left))
+            .op(Op::infix(power, Right))
+            .op(Op::prefix(not) | Op::prefix(r#ref) | Op::prefix(neg) | Op::prefix(deref))
+        };
 }
 
 pub fn parse(line: &str) -> Result<Query> {
@@ -84,6 +85,13 @@ impl EddParser {
                 Rule::lte => Expr::Lte(Box::new(lhs), Box::new(rhs)),
                 Rule::gt => Expr::Gt(Box::new(lhs), Box::new(rhs)),
                 Rule::gte => Expr::Gte(Box::new(lhs), Box::new(rhs)),
+                _ => unreachable!(),
+            })
+            .map_prefix(|op, rhs| match op.as_rule() {
+                Rule::not => Expr::Not(Box::new(rhs)),
+                Rule::r#ref => Expr::Ref(Box::new(rhs)),
+                Rule::neg => Expr::Neg(Box::new(rhs)),
+                Rule::deref => Expr::Deref(Box::new(rhs)),
                 _ => unreachable!(),
             })
             .parse(expr)

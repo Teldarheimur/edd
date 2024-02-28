@@ -6,13 +6,27 @@ use std::{
 
 use super::{Literal, RuntimeError};
 
+impl Display for RuntimeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            RuntimeError::DivideByZero => write!(f, "\"Divide by zero is undefined\""),
+            RuntimeError::ZeroToTheZeroeth => write!(f, "\"0^0 is undefined\""),
+            RuntimeError::ExpectedBooleanInCond => write!(f, "\"Conditions can only be booleans\""),
+            RuntimeError::NoSuchVar => write!(f, "\"No such variable\""),
+            RuntimeError::IntOverflow(op, a, b) => write!(f, "\"Overflow when applying {op} to {a} and {b}\""),
+            RuntimeError::InvalidOperation(op, t) => write!(f, "\"Invalid operation {op} on {t}\""),
+            RuntimeError::UndefinedVariable => write!(f, "\"Undefined variable\""),
+        }
+    }
+}
+
 impl Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Literal::Integer(v) => write!(f, "{v}"),
             Literal::Float(v) => write!(f, "{v}"),
             Literal::Boolean(v) => write!(f, "{v}"),
-            Literal::Throw(e) => write!(f, "error({e:?})"),
+            Literal::Throw(e) => write!(f, "error({e})"),
         }
     }
 }

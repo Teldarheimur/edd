@@ -1,5 +1,5 @@
 use edd::{
-    ast::{Expr, Query},
+    ast::{Literal, Query, RuntimeError},
     parse::parse,
     rt::SymbolTable,
 };
@@ -10,7 +10,6 @@ fn main() {
     let stdin = std::io::stdin();
 
     let mut symtab = SymbolTable::new();
-    symtab.add_var(false, "hello", Expr::Ident("world".to_owned()));
 
     print!("Welcome to the Ð-repl\n?> ");
     stdout().flush().unwrap();
@@ -19,32 +18,9 @@ fn main() {
         let parse_result = parse(line.trim());
         match parse_result {
             Ok(q) => {
-                let lookup = |n: &'_ str| symtab
-                                .lookup(n)
-                                .cloned()
-                                .unwrap_or_else(|| Expr::Ident(n.to_owned()));
-
-                match q {
-                    Query::Inquire(e) => {
-                        println!(
-                            " = {}",
-                            e.eval_const(lookup)
-                        );
-                    }
-                    Query::Let(n, expr) => {
-                        let expr = expr.eval_const(lookup);
-                        symtab.add_var(false, n, expr);
-                    }
-                    Query::Var(n, expr) => {
-                        let expr = expr.eval_const(lookup);
-                        symtab.add_var(true, n, expr);
-                    }
-                    Query::Rebind(n, expr) => {
-                        let expr = expr.eval_const(lookup);
-                        if !symtab.mutate(&n, expr) {
-                            println!("{n} is not mutable");
-                        }
-                    }
+                match qprocess(q, &mut symtab) {
+                    Ok(()) => (),
+                    Err(e) => println!("error! {e}"),
                 }
             }
             Err(e) => println!(" Syntax error: {e}"),
@@ -53,4 +29,44 @@ fn main() {
         print!("?> ");
         stdout().flush().unwrap();
     }
+}
+
+fn qprocess(q: Query, symtab: &mut SymbolTable) -> Result<(), RuntimeError> {
+    let lookup = |n: &'_ str| symtab
+        .lookup(n)
+        .cloned()
+        .unwrap_or(Literal::Throw(RuntimeError::UndefinedVariable));
+
+    match q {
+        Query::Inquire(e) => {
+            println!(
+                " = {}",
+                e.eval(lookup)
+            );
+        }
+        Query::Let(n, expr) => {
+            let expr = expr.eval(lookup);
+            if let Literal::Throw(e) = expr {
+                return Err(e);
+            }
+            symtab.add_var(false, n, expr);
+        }
+        Query::Var(n, expr) => {
+            let expr = expr.eval(lookup);
+            if let Literal::Throw(e) = expr {
+                return Err(e);
+            }
+            symtab.add_var(true, n, expr);
+        }
+        Query::Rebind(n, expr) => {
+            let expr = expr.eval(lookup);
+            if let Literal::Throw(e) = expr {
+                return Err(e);
+            }
+            if !symtab.mutate(&n, expr) {
+                println!("{n} is not mutable");
+            }
+        }
+    }
+    Ok(())
 }
