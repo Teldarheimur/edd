@@ -30,10 +30,19 @@ if = {
     "if" ~ expr ~ ":" ~ expr ~ "else" ~ expr
 }
 
+idents = { (ident ~ ("," ~ ident)*)? ~ ","? }
+exprs = { (expr ~ ("," ~ expr)*)? ~ ","? }
+
+lambda = {
+    "fn" ~ "(" ~ idents ~ ")" ~ expr
+}
+call = {
+    ident ~ "(" ~ exprs ~ ")"
+}
+
 literal = { num | boolean }
 expr = { term ~ (operation ~ term)*}
-term = _{ literal | if | ident | unop ~ term | "(" ~ expr ~ ")" }
-
+term = _{ if | lambda | literal | call | ident | unop ~ term | "(" ~ expr ~ ")" }
 
 let_binding = { "let" ~ ident ~ "=" ~ expr }
 var_binding = { "var" ~ ident ~ "=" ~ expr }

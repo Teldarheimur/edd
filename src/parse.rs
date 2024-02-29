@@ -26,7 +26,7 @@ lazy_static! {
             .op(Op::infix(multiply, Left) | Op::infix(divide, Left))
             .op(Op::infix(power, Right))
             .op(Op::prefix(not) | Op::prefix(r#ref) | Op::prefix(neg) | Op::prefix(deref))
-        };
+    };
 }
 
 pub fn parse(line: &str) -> Result<Query> {
@@ -62,7 +62,7 @@ impl EddParser {
         EXPR_PARSER
             .map_primary(|primary| match primary.as_rule() {
                 Rule::literal => Expr::Val(Self::parse_literal(primary.into_inner())),
-                Rule::ident => Expr::Ident(primary.as_str().to_owned()),
+                Rule::ident => Expr::Ident(primary.as_str().into()),
                 Rule::expr => Self::parse_expr(primary.into_inner()),
                 Rule::r#if => {
                     let mut pairs = primary.into_inner();
@@ -70,6 +70,30 @@ impl EddParser {
                     let t = Self::parse_expr(pairs.next().unwrap().into_inner());
                     let e = Self::parse_expr(get_only_one(pairs).into_inner());
                     Expr::If(Box::new(c), Box::new(t), Box::new(e))
+                }
+                Rule::lambda => {
+                    let mut pairs = primary.into_inner();
+                    let idents = pairs
+                        .next()
+                        .unwrap()
+                        .into_inner()
+                        .into_iter()
+                        .map(|p| p.as_str().into())
+                        .collect();
+                    let body = Self::parse_expr(get_only_one(pairs).into_inner());
+
+                    Expr::Lambda(idents, Box::new(body))
+                }
+                Rule::call => {
+                    let mut pairs = primary.into_inner();
+                    let name = pairs.next().unwrap().as_str().into();
+                    let exprs = get_only_one(pairs)
+                        .into_inner()
+                        .into_iter()
+                        .map(|p| Self::parse_expr(p.into_inner()))
+                        .collect();
+
+                    Expr::Call(name, exprs)
                 }
                 r => unreachable!("{r:?}"),
             })
@@ -102,19 +126,19 @@ impl EddParser {
             Rule::expr => Query::Inquire(Self::parse_expr(query.into_inner())),
             Rule::let_binding => {
                 let mut binding = query.into_inner();
-                let id = binding.next().unwrap().as_str().to_owned();
+                let id = binding.next().unwrap().as_str().into();
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
                 Query::Let(id, expr)
             }
             Rule::var_binding => {
                 let mut binding = query.into_inner();
-                let id = binding.next().unwrap().as_str().to_owned();
+                let id = binding.next().unwrap().as_str().into();
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
                 Query::Var(id, expr)
             }
             Rule::rebinding => {
                 let mut binding = query.into_inner();
-                let id = binding.next().unwrap().as_str().to_owned();
+                let id = binding.next().unwrap().as_str().into();
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
                 Query::Rebind(id, expr)
             }

@@ -1,7 +1,10 @@
 use edd::{
     ast::Query,
     parse::parse,
-    rt::{SymbolTable, RuntimeError},
+    rt::{
+        EitherError::{self, Cte, Rte},
+        SymbolTable,
+    },
 };
 
 use std::io::{stdout, BufRead, Write};
@@ -15,15 +18,14 @@ fn main() {
     stdout().flush().unwrap();
     for line in stdin.lock().lines() {
         let line = line.unwrap();
-        let parse_result = parse(line.trim());
+        let parse_result = parse(&line);
         match parse_result {
-            Ok(q) => {
-                match qprocess(q, &mut symtab) {
-                    Ok(()) => (),
-                    Err(e) => println!("error! {e}"),
-                }
-            }
-            Err(e) => println!(" Syntax error: {e}"),
+            Ok(q) => match qprocess(q, &mut symtab) {
+                Ok(()) => (),
+                Err(Cte(e)) => println!("Compile time error! {e}"),
+                Err(Rte(e)) => println!("Runtime error! {e}"),
+            },
+            Err(e) => println!("Syntax error: {e}"),
         }
 
         print!("?> ");
@@ -31,32 +33,22 @@ fn main() {
     }
 }
 
-fn qprocess(q: Query, symtab: &mut SymbolTable) -> Result<(), RuntimeError> {
-    let lookup = |n: &'_ str| symtab
-        .lookup(n)
-        .cloned()
-        .ok_or(RuntimeError::UndefinedVariable);
-
+fn qprocess(q: Query, symtab: &mut SymbolTable) -> Result<(), EitherError> {
     match q {
         Query::Inquire(e) => {
-            println!(
-                " = {}",
-                e.eval(lookup)?
-            );
+            println!(" = {}", e.eval(symtab)?);
         }
         Query::Let(n, expr) => {
-            let expr = expr.eval(lookup)?;
+            let expr = expr.eval(symtab)?;
             symtab.add_var(false, n, expr);
         }
         Query::Var(n, expr) => {
-            let expr = expr.eval(lookup)?;
+            let expr = expr.eval(symtab)?;
             symtab.add_var(true, n, expr);
         }
         Query::Rebind(n, expr) => {
-            let expr = expr.eval(lookup)?;
-            if !symtab.mutate(&n, expr) {
-                println!("{n} is not mutable");
-            }
+            let expr = expr.eval(symtab)?;
+            symtab.mutate(&n, expr)?;
         }
     }
     Ok(())
