@@ -11,6 +11,7 @@ use super::{CompileTimeError, Cte, EitherError, Rte, RuntimeError, Value};
 impl From<Literal> for Value {
     fn from(value: Literal) -> Self {
         match value {
+            Literal::Empty => Value::Empty,
             Literal::Integer(i) => Value::Integer(i),
             Literal::Float(i) => Value::Float(i),
             Literal::Boolean(i) => Value::Boolean(i),
@@ -21,10 +22,12 @@ impl From<Literal> for Value {
 impl From<Value> for Expr {
     fn from(value: Value) -> Self {
         match value {
+            Value::Empty => Expr::Val(Literal::Empty),
             Value::Integer(i) => Expr::Val(Literal::Integer(i)),
             Value::Float(i) => Expr::Val(Literal::Float(i)),
             Value::Boolean(i) => Expr::Val(Literal::Boolean(i)),
             Value::String(_s) => todo!(), // Expr::Val(Literal::String(s)),
+            Value::BuiltinFn(_) => unimplemented!(),
             Value::Function { arg_num, body } => Expr::Lambda(
                 (0..arg_num).map(|n| format!("${n}").into()).collect(),
                 Box::new(body),
@@ -57,7 +60,6 @@ impl Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::DivideByZero => write!(f, "Divide by zero is undefined"),
-            Self::ZeroToTheZeroeth => write!(f, "0^0 is undefined"),
             Self::IntOverflow(op, a, b) => write!(f, "Overflow when applying {op} to {a} and {b}"),
         }
     }
@@ -80,6 +82,7 @@ impl Display for CompileTimeError {
 impl Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Value::Empty => write!(f, "()"),
             Value::Integer(v) => write!(f, "{v}"),
             Value::Float(v) => write!(f, "{v}"),
             Value::Boolean(v) => write!(f, "{v}"),
@@ -87,6 +90,7 @@ impl Display for Value {
             Value::Function { arg_num, body } => {
                 write!(f, "fn(... {arg_num}) {body}")
             }
+            Value::BuiltinFn(func) => write!(f, "fn({func:p})"),
         }
     }
 }
@@ -109,9 +113,10 @@ impl Add for Value {
             (Value::String(_), _) | (_, Value::String(_)) => {
                 Err(CompileTimeError::InvalidOperation("add", "string"))?
             }
-            (Value::Function { .. }, _) | (_, Value::Function { .. }) => {
+            (Value::Function { .. } | Value::BuiltinFn(_), _) | (_, Value::Function { .. } | Value::BuiltinFn(_)) => {
                 Err(CompileTimeError::InvalidOperation("add", "fn"))?
             }
+            (Value::Empty, _) | (_, Value::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }
@@ -134,9 +139,10 @@ impl Sub for Value {
             (Value::String(_), _) | (_, Value::String(_)) => {
                 Err(CompileTimeError::InvalidOperation("sub", "string"))?
             }
-            (Value::Function { .. }, _) | (_, Value::Function { .. }) => {
+            (Value::Function { .. } | Value::BuiltinFn(_), _) | (_, Value::Function { .. } | Value::BuiltinFn(_)) => {
                 Err(CompileTimeError::InvalidOperation("sub", "fn"))?
             }
+            (Value::Empty, _) | (_, Value::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }
@@ -159,9 +165,10 @@ impl Mul for Value {
             (Value::String(_), _) | (_, Value::String(_)) => {
                 Err(CompileTimeError::InvalidOperation("mul", "string"))?
             }
-            (Value::Function { .. }, _) | (_, Value::Function { .. }) => {
+            (Value::Function { .. } | Value::BuiltinFn(_), _) | (_, Value::Function { .. } | Value::BuiltinFn(_)) => {
                 Err(CompileTimeError::InvalidOperation("mul", "fn"))?
             }
+            (Value::Empty, _) | (_, Value::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }
@@ -184,44 +191,15 @@ impl Div for Value {
             (Value::String(_), _) | (_, Value::String(_)) => {
                 Err(CompileTimeError::InvalidOperation("div", "string"))?
             }
-            (Value::Function { .. }, _) | (_, Value::Function { .. }) => {
+            (Value::Function { .. } | Value::BuiltinFn(_), _) | (_, Value::Function { .. } | Value::BuiltinFn(_)) => {
                 Err(CompileTimeError::InvalidOperation("div", "fn"))?
             }
+            (Value::Empty, _) | (_, Value::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }
 
 impl Value {
-    pub fn pow(self, other: Value) -> Result<Self, EitherError> {
-        Ok(match (self, other) {
-            (Value::Integer(i1), Value::Integer(i2)) => {
-                if i2 > u32::MAX as i128 {
-                    return Err(RuntimeError::IntOverflow("sub", i1, i2).into());
-                } else if i2 < 0 {
-                    // TODO: suboptimal
-                    Value::Float((i1 as f64).powf(i2 as f64))
-                } else {
-                    i1.checked_pow(i2 as u32)
-                        .map(Value::Integer)
-                        .ok_or(RuntimeError::IntOverflow("pow", i1, i2))?
-                }
-            }
-            (Value::Float(f1), Value::Float(f2)) => Value::Float(f1 / f2),
-            (Value::Integer(i), Value::Float(f)) => Value::Float(i as f64 / f),
-            (Value::Float(f), Value::Integer(i)) => Value::Float(f / i as f64),
-
-            (Value::Boolean(_), _) | (_, Value::Boolean(_)) => {
-                Err(CompileTimeError::InvalidOperation("pow", "boolean"))?
-            }
-            (Value::String(_), _) | (_, Value::String(_)) => {
-                Err(CompileTimeError::InvalidOperation("pow", "string"))?
-            }
-            (Value::Function { .. }, _) | (_, Value::Function { .. }) => {
-                Err(CompileTimeError::InvalidOperation("pow", "fn"))?
-            }
-        })
-    }
-
     pub fn cmp_op(
         self,
         other: Value,
@@ -246,9 +224,10 @@ impl Value {
             (Value::String(_), _) | (_, Value::String(_)) => {
                 Err(CompileTimeError::InvalidOperation("compare", "string"))?
             }
-            (Value::Function { .. }, _) | (_, Value::Function { .. }) => {
+            (Value::Function { .. } | Value::BuiltinFn(_), _) | (_, Value::Function { .. } | Value::BuiltinFn(_)) => {
                 Err(CompileTimeError::InvalidOperation("compare", "fn"))?
             }
+            (Value::Empty, _) | (_, Value::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }

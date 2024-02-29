@@ -7,8 +7,8 @@ use std::rc::Rc;
 use crate::rt::{CompileTimeError, Cte, EitherError, RuntimeError, SymbolTable, Value, Variable};
 
 #[derive(Debug, Clone)]
-pub enum Query {
-    Inquire(Expr),
+pub enum Statement {
+    Express(Expr),
     Let(Box<str>, Expr),
     Var(Box<str>, Expr),
     Rebind(Box<str>, Expr),
@@ -19,6 +19,7 @@ pub enum Literal {
     Integer(i128),
     Float(f64),
     Boolean(bool),
+    Empty,
     // String(Rc<str>),
 }
 
@@ -32,7 +33,6 @@ pub enum Expr {
     Sub(Box<Self>, Box<Self>),
     Mul(Box<Self>, Box<Self>),
     Div(Box<Self>, Box<Self>),
-    Pow(Box<Self>, Box<Self>),
 
     Not(Box<Self>),
     Ref(Box<Self>),
@@ -156,19 +156,6 @@ impl Expr {
                     try_binop(a, b, |a, b| a / b, Expr::Div)?
                 }
             }
-            Expr::Pow(a, b) => {
-                let a = a.eval_const_inner(st, args)?;
-                let b = b.eval_const_inner(st, args)?;
-
-                match (a.is_const_zero(), b.is_const_zero()) {
-                    (false, false) if a.is_const_one() => Expr::Val(Literal::Integer(1)),
-                    (false, false) if b.is_const_one() => a,
-                    (false, false) => try_binop(a, b, Literal::pow, Expr::Pow)?,
-                    (true, false) => Expr::Val(Literal::Integer(0)),
-                    (false, true) => Expr::Val(Literal::Integer(1)),
-                    (true, true) => Expr::Raise(RuntimeError::ZeroToTheZeroeth),
-                }
-            }
 
             Expr::Lambda(_f, _args) => todo!(),
             Expr::Call(_f, _args) => todo!(),
@@ -276,7 +263,6 @@ impl Display for Expr {
             Expr::Sub(a, b) => write!(f, "({a} - {b})"),
             Expr::Mul(a, b) => write!(f, "({a} * {b})"),
             Expr::Div(a, b) => write!(f, "({a} / {b})"),
-            Expr::Pow(a, b) => write!(f, "({a} ^ {b})"),
             Expr::Lambda(args, body) => {
                 write!(f, "fn(")?;
                 let mut first = true;
@@ -317,13 +303,13 @@ impl Display for Expr {
     }
 }
 
-impl Display for Query {
+impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Query::Inquire(e) => write!(f, "{e}"),
-            Query::Let(n, e) => write!(f, "let {n} = {e}"),
-            Query::Var(n, e) => write!(f, "var {n} = {e}"),
-            Query::Rebind(n, e) => write!(f, "{n} = {e}"),
+            Statement::Express(e) => write!(f, "{e}"),
+            Statement::Let(n, e) => write!(f, "let {n} = {e}"),
+            Statement::Var(n, e) => write!(f, "var {n} = {e}"),
+            Statement::Rebind(n, e) => write!(f, "{n} = {e}"),
         }
     }
 }

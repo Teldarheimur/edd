@@ -10,6 +10,7 @@ use crate::rt::{CompileTimeError, EitherError, RuntimeError};
 impl Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            Literal::Empty => write!(f, "()"),
             Literal::Integer(v) => write!(f, "{v}"),
             Literal::Float(v) => write!(f, "{v}"),
             // Literal::String(s) => w,
@@ -33,6 +34,7 @@ impl Add for Literal {
             (Literal::Boolean(_), _) | (_, Literal::Boolean(_)) => {
                 Err(CompileTimeError::InvalidOperation("add", "boolean"))?
             }
+            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }
@@ -52,6 +54,7 @@ impl Sub for Literal {
             (Literal::Boolean(_), _) | (_, Literal::Boolean(_)) => {
                 Err(CompileTimeError::InvalidOperation("sub", "boolean"))?
             }
+            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }
@@ -71,6 +74,7 @@ impl Mul for Literal {
             (Literal::Boolean(_), _) | (_, Literal::Boolean(_)) => {
                 Err(CompileTimeError::InvalidOperation("mul", "boolean"))?
             }
+            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }
@@ -90,35 +94,12 @@ impl Div for Literal {
             (Literal::Boolean(_), _) | (_, Literal::Boolean(_)) => {
                 Err(CompileTimeError::InvalidOperation("div", "boolean"))?
             }
+            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }
 
 impl Literal {
-    pub fn pow(self, other: Literal) -> Result<Self, EitherError> {
-        Ok(match (self, other) {
-            (Literal::Integer(i1), Literal::Integer(i2)) => {
-                if i2 > u32::MAX as i128 {
-                    Err(RuntimeError::IntOverflow("sub", i1, i2))?
-                } else if i2 < 0 {
-                    // TODO: suboptimal
-                    Literal::Float((i1 as f64).powf(i2 as f64))
-                } else {
-                    i1.checked_pow(i2 as u32)
-                        .map(Literal::Integer)
-                        .ok_or(RuntimeError::IntOverflow("pow", i1, i2))?
-                }
-            }
-            (Literal::Float(f1), Literal::Float(f2)) => Literal::Float(f1 / f2),
-            (Literal::Integer(i), Literal::Float(f)) => Literal::Float(i as f64 / f),
-            (Literal::Float(f), Literal::Integer(i)) => Literal::Float(f / i as f64),
-
-            (Literal::Boolean(_), _) | (_, Literal::Boolean(_)) => {
-                Err(CompileTimeError::InvalidOperation("mul", "boolean"))?
-            }
-        })
-    }
-
     pub fn cmp_op(
         self,
         other: Literal,
@@ -140,6 +121,7 @@ impl Literal {
             (Literal::Boolean(_), _) | (_, Literal::Boolean(_)) => {
                 return Err(CompileTimeError::InvalidOperation("compare", "boolean"))
             }
+            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
     }
 }

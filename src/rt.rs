@@ -8,12 +8,12 @@ pub enum EitherError {
     Cte(CompileTimeError),
 }
 
+use collect_result::CollectResult;
 pub use EitherError::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RuntimeError {
     DivideByZero,
-    ZeroToTheZeroeth,
     IntOverflow(&'static str, i128, i128),
 }
 
@@ -41,7 +41,9 @@ pub enum Value {
     Float(f64),
     Boolean(bool),
     String(Rc<str>),
+    Empty,
     Function { arg_num: usize, body: Expr },
+    BuiltinFn(fn(Box<[Value]>) -> Value),
 }
 
 impl Variable {
@@ -62,6 +64,9 @@ impl SymbolTable {
     #[inline]
     pub fn new() -> Self {
         Self::default()
+    }
+    pub fn add_func<S: Into<Box<str>>>(&mut self, name: S, f: fn(Box<[Value]>) -> Value) {
+        self.add_var(false, name, Value::BuiltinFn(f))
     }
     pub fn add_var<S: Into<Box<str>>>(&mut self, mutable: bool, name: S, val: Value) {
         let name = name.into();
@@ -100,7 +105,7 @@ impl SymbolTable {
 }
 
 impl Expr {
-    pub fn eval(self, st: &mut SymbolTable) -> Result<Value, EitherError> {
+    pub fn eval(self, st: &SymbolTable) -> Result<Value, EitherError> {
         match self {
             Expr::Ident(i) => st.lookup(&i).map_err(Cte),
             Expr::Val(v) => Ok(v.into()),
@@ -110,14 +115,25 @@ impl Expr {
             Expr::Sub(a, b) => a.eval(st)? - b.eval(st)?,
             Expr::Mul(a, b) => a.eval(st)? * b.eval(st)?,
             Expr::Div(a, b) => a.eval(st)? / b.eval(st)?,
-            Expr::Pow(a, b) => a.eval(st)?.pow(b.eval(st)?),
 
             Expr::Lambda(args, body) => Ok(Value::Function {
                 body: body.eval_const(st, &args)?,
                 arg_num: args.len(),
             }),
             Expr::Call(name, args) => {
-                let Value::Function { arg_num, body } = st.lookup(&name)? else {
+                let f = st.lookup(&name)?;
+
+                if let Value::BuiltinFn(f) = f {
+                    let args: Vec<_> = args
+                        .to_vec()
+                        .into_iter()
+                        .map(|arg| arg.eval(st))
+                        .collect_result()?;
+
+                    return Ok(f(args.into_boxed_slice()));
+                }
+
+                let Value::Function { arg_num, body } = f else {
                     return Err(CompileTimeError::CallOnNonFunction).map_err(Cte);
                 };
                 if arg_num != args.len() {

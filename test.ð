@@ -1,0 +1,5 @@
+print(124124);
+
+let f = fn(x) x * 0; // hestefest
+print(f);
+f(241241) // hest

@@ -7,7 +7,7 @@ use pest::iterators::Pairs;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 
-use crate::ast::{Expr, Literal, Query};
+use crate::ast::{Expr, Literal, Statement};
 use crate::get_only_one;
 
 lazy_static! {
@@ -24,15 +24,14 @@ lazy_static! {
                 | Op::infix(gte, Left))
             .op(Op::infix(add, Left) | Op::infix(subtract, Left))
             .op(Op::infix(multiply, Left) | Op::infix(divide, Left))
-            .op(Op::infix(power, Right))
             .op(Op::prefix(not) | Op::prefix(r#ref) | Op::prefix(neg) | Op::prefix(deref))
     };
 }
 
-pub fn parse(line: &str) -> Result<Query> {
-    let pairs = EddParser::parse(Rule::query, line)?;
+pub fn parse(line: &str) -> Result<Box<[Statement]>> {
+    let pairs = EddParser::parse(Rule::program, line)?;
 
-    Ok(EddParser::parse_query(pairs))
+    Ok(EddParser::parse_program(pairs))
 }
 
 #[derive(Parser)]
@@ -102,7 +101,6 @@ impl EddParser {
                 Rule::subtract => Expr::Sub(Box::new(lhs), Box::new(rhs)),
                 Rule::multiply => Expr::Mul(Box::new(lhs), Box::new(rhs)),
                 Rule::divide => Expr::Div(Box::new(lhs), Box::new(rhs)),
-                Rule::power => Expr::Pow(Box::new(lhs), Box::new(rhs)),
                 Rule::eq => Expr::Eq(Box::new(lhs), Box::new(rhs)),
                 Rule::neq => Expr::Neq(Box::new(lhs), Box::new(rhs)),
                 Rule::lt => Expr::Lt(Box::new(lhs), Box::new(rhs)),
@@ -120,30 +118,42 @@ impl EddParser {
             })
             .parse(expr)
     }
-    fn parse_query(mut query: Pairs<Rule>) -> Query {
-        let query = query.next().unwrap();
-        match query.as_rule() {
-            Rule::expr => Query::Inquire(Self::parse_expr(query.into_inner())),
-            Rule::let_binding => {
-                let mut binding = query.into_inner();
+    fn parse_statement(mut stmnt: Pairs<Rule>) -> Statement {
+        let Some(stmnt) = stmnt.next() else {
+            return Statement::Express(Expr::Val(Literal::Empty));
+        };
+        match stmnt.as_rule() {
+            Rule::expr => Statement::Express(Self::parse_expr(stmnt.into_inner())),
+            Rule::let_decl => {
+                let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
-                Query::Let(id, expr)
+                Statement::Let(id, expr)
             }
-            Rule::var_binding => {
-                let mut binding = query.into_inner();
+            Rule::var_decl => {
+                let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
-                Query::Var(id, expr)
+                Statement::Var(id, expr)
             }
-            Rule::rebinding => {
-                let mut binding = query.into_inner();
+            Rule::rebind => {
+                let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
-                Query::Rebind(id, expr)
+                Statement::Rebind(id, expr)
             }
             e => unreachable!("{e:?}"),
         }
+    }
+    fn parse_program(mut program: Pairs<Rule>) -> Box<[Statement]> {
+        let stmnts = program.next().unwrap()
+            .into_inner()
+            .map(|p| Self::parse_statement(p.into_inner()))
+            .collect();
+
+        assert_eq!(program.next().unwrap().as_rule(), Rule::EOI);
+
+        stmnts
     }
 }
 

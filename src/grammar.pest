@@ -5,14 +5,13 @@ boolean = @{ "true" | "false" }
 ident = @{ ALPHABETIC ~ (ALPHABETIC | ASCII_DIGIT )* }
 
 operation = _{
-    add | subtract | multiply | divide | power |
+    add | subtract | multiply | divide |
     eq | neq | lt | lte | gt | gte
 }
     add      = { "+" }
     subtract = { "-" }
     multiply = { "*" }
     divide   = { "/" }
-    power    = { "^" }
     eq       = { "==" }
     neq      = { "!=" }
     lt       = { "<" }
@@ -42,14 +41,24 @@ call = {
 
 literal = { num | boolean }
 expr = { term ~ (operation ~ term)*}
-term = _{ if | lambda | literal | call | ident | unop ~ term | "(" ~ expr ~ ")" }
+term = _{ if | lambda | literal | call | ident | unop ~ expr | "(" ~ expr ~ ")" }
 
-let_binding = { "let" ~ ident ~ "=" ~ expr }
-var_binding = { "var" ~ ident ~ "=" ~ expr }
-rebinding = { ident ~ "=" ~ expr }
+binding = _{
+    let_decl | fn_decl | var_decl | rebind
+}
+    let_decl = { "let" ~ ident ~ "=" ~ expr }
+    fn_decl = { "fn" ~ ident ~ "(" ~ idents ~ ")" ~ block }
+    var_decl = { "var" ~ ident ~ "=" ~ expr }
+    rebind = { ident ~ "=" ~ expr }
 
-query = _{ SOI ~
-    (let_binding | var_binding | rebinding | expr)
+statement = { (binding | expr)? }
+    stmnts = { (statement ~ (";" ~ statement)*)? }
+
+block = _{ "{" ~ stmnts ~ "}" }
+
+program = _{ SOI ~
+    stmnts
 ~ EOI }
 
-WHITESPACE = _{ " " | "\t" }
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | &EOI) }

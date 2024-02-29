@@ -1,55 +1,74 @@
 use edd::{
-    ast::Query,
+    ast::Statement,
     parse::parse,
     rt::{
         EitherError::{self, Cte, Rte},
-        SymbolTable,
+        SymbolTable, Value,
     },
 };
 
-use std::io::{stdout, BufRead, Write};
+use std::{env::args_os, fs::File, io::Read};
 
 fn main() {
-    let stdin = std::io::stdin();
+    let path = args_os().nth(1).expect("input file");
 
-    let mut symtab = SymbolTable::new();
-
-    print!("Welcome to the Ð-repl\n?> ");
-    stdout().flush().unwrap();
-    for line in stdin.lock().lines() {
-        let line = line.unwrap();
-        let parse_result = parse(&line);
-        match parse_result {
-            Ok(q) => match qprocess(q, &mut symtab) {
-                Ok(()) => (),
-                Err(Cte(e)) => println!("Compile time error! {e}"),
-                Err(Rte(e)) => println!("Runtime error! {e}"),
-            },
-            Err(e) => println!("Syntax error: {e}"),
+    let prgrm = {
+        let mut file = File::open(path).unwrap();
+        let mut s = String::new();
+        file.read_to_string(&mut s).unwrap();
+        match parse(&s) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Syntax error\n{e}");
+                return;
+            }
         }
+    };
 
-        print!("?> ");
-        stdout().flush().unwrap();
+    match run(prgrm) {
+        Ok(Value::Empty) => (),
+        Ok(v) => println!("Returned {v}"),
+        Err(Cte(e)) => eprintln!("Compile error: {e}"),
+        Err(Rte(e)) => eprintln!("Runtime error: {e}"),
     }
 }
 
-fn qprocess(q: Query, symtab: &mut SymbolTable) -> Result<(), EitherError> {
-    match q {
-        Query::Inquire(e) => {
-            println!(" = {}", e.eval(symtab)?);
+fn run(prgm: Box<[Statement]>) -> Result<Value, EitherError>{
+    let mut symtab = SymbolTable::new();
+
+    symtab.add_func("print", |vls| {
+        for vl in vls.to_vec() {
+            println!("{vl}");
         }
-        Query::Let(n, expr) => {
+        Value::Empty
+    });
+
+    let mut last_expr = Value::Empty;
+
+    for stmnt in prgm.to_vec() {
+        last_expr = run_stmnt(stmnt, &mut symtab)?;
+    }
+
+    Ok(last_expr)
+}
+
+fn run_stmnt(s: Statement, symtab: &mut SymbolTable) -> Result<Value, EitherError> {
+    match s {
+        Statement::Express(e) => e.eval(symtab),
+        Statement::Let(n, expr) => {
             let expr = expr.eval(symtab)?;
             symtab.add_var(false, n, expr);
+            Ok(Value::Empty)
         }
-        Query::Var(n, expr) => {
+        Statement::Var(n, expr) => {
             let expr = expr.eval(symtab)?;
             symtab.add_var(true, n, expr);
+            Ok(Value::Empty)
         }
-        Query::Rebind(n, expr) => {
+        Statement::Rebind(n, expr) => {
             let expr = expr.eval(symtab)?;
             symtab.mutate(&n, expr)?;
+            Ok(Value::Empty)
         }
     }
-    Ok(())
 }

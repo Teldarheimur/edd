@@ -10,3 +10,7 @@ lazy_static = "1.4"
 clap = "4.5"
 pest = "2.7"
 pest_derive = "2.7"
+collect_result = "0.1"
+
+[profile.release]
+strip = "debuginfo"

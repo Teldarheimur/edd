@@ -93,6 +93,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
 
 [[package]]
+name = "collect_result"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8d08e26327531306d48a1e28d8e0e3ea604f3dd72988821498e0b81da72427a"
+
+[[package]]
 name = "colorchoice"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -132,6 +138,7 @@ name = "edd"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "collect_result",
  "lazy_static",
  "pest",
  "pest_derive",
