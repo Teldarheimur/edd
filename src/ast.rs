@@ -14,13 +14,13 @@ pub enum Statement {
     Rebind(Box<str>, Expr),
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Integer(i128),
     Float(f64),
     Boolean(bool),
     Empty,
-    // String(Rc<str>),
+    String(Rc<str>),
 }
 
 mod literal_impl;
@@ -33,6 +33,7 @@ pub enum Expr {
     Sub(Box<Self>, Box<Self>),
     Mul(Box<Self>, Box<Self>),
     Div(Box<Self>, Box<Self>),
+    Concat(Box<Self>, Box<Self>),
 
     Not(Box<Self>),
     Ref(Box<Self>),
@@ -95,7 +96,7 @@ impl Expr {
     ) -> Result<Self, CompileTimeError> {
         Ok(match self {
             Expr::Ident(i) => {
-                if i.starts_with("$") {
+                if i.starts_with('$') {
                     return Ok(Expr::Ident(i));
                 }
                 if let Some(i) = args.iter().position(|n| *i == **n) {
@@ -154,6 +155,17 @@ impl Expr {
                     a
                 } else {
                     try_binop(a, b, |a, b| a / b, Expr::Div)?
+                }
+            }
+            Expr::Concat(a, b) => {
+                let a = a.eval_const_inner(st, args)?;
+                let b = b.eval_const_inner(st, args)?;
+
+                match (a, b) {
+                    (Expr::Val(Literal::String(a)), Expr::Val(Literal::String(b))) => {
+                        Expr::Val(Literal::String(format!("{a}{b}").into()))
+                    }
+                    (a, b) => Expr::Concat(Box::new(a), Box::new(b)),
                 }
             }
 
@@ -263,6 +275,7 @@ impl Display for Expr {
             Expr::Sub(a, b) => write!(f, "({a} - {b})"),
             Expr::Mul(a, b) => write!(f, "({a} * {b})"),
             Expr::Div(a, b) => write!(f, "({a} / {b})"),
+            Expr::Concat(a, b) => write!(f, "({a} ++ {b}"),
             Expr::Lambda(args, body) => {
                 write!(f, "fn(")?;
                 let mut first = true;

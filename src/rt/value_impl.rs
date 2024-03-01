@@ -15,6 +15,7 @@ impl From<Literal> for Value {
             Literal::Integer(i) => Value::Integer(i),
             Literal::Float(i) => Value::Float(i),
             Literal::Boolean(i) => Value::Boolean(i),
+            Literal::String(s) => Value::String(s),
         }
     }
 }
@@ -86,7 +87,7 @@ impl Display for Value {
             Value::Integer(v) => write!(f, "{v}"),
             Value::Float(v) => write!(f, "{v}"),
             Value::Boolean(v) => write!(f, "{v}"),
-            Value::String(s) => write!(f, "{s:?}"),
+            Value::String(s) => write!(f, "{s}"),
             Value::Function { arg_num, body } => {
                 write!(f, "fn(... {arg_num}) {body}")
             }
@@ -229,5 +230,13 @@ impl Value {
             }
             (Value::Empty, _) | (_, Value::Empty) => Err(CompileTimeError::InvalidOperation("", "empty"))?,
         })
+    }
+    pub fn concat(self, other: Value) -> Result<Value, EitherError> {
+        match (self, other) {
+            (Value::String(s1), Value::String(s2)) => {
+                Ok(Value::String(format!("{s1}{s2}").into()))
+            },
+            (_, _) => Err(Cte(CompileTimeError::InvalidOperation("concat", "non-string")))
+        }
     }
 }

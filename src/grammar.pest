@@ -4,11 +4,18 @@ num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
 boolean = @{ "true" | "false" }
 ident = @{ ALPHABETIC ~ (ALPHABETIC | ASCII_DIGIT )* }
 
+string = ${ "\"" ~
+    (string_part | ("\\" ~ escape_c))*
+~ "\"" }
+    string_part = @{ ( !("\"" | "\\" | NEWLINE) ~ ANY )+ }
+    escape_c = @{ ("x" ~ ('0' .. '7') ~ HEX_DIGIT ) | ANY }
+
 operation = _{
-    add | subtract | multiply | divide |
+    concat | add | subtract | multiply | divide |
     eq | neq | lt | lte | gt | gte
 }
     add      = { "+" }
+    concat   = { "++" }
     subtract = { "-" }
     multiply = { "*" }
     divide   = { "/" }
@@ -39,7 +46,7 @@ call = {
     ident ~ "(" ~ exprs ~ ")"
 }
 
-literal = { num | boolean }
+literal = { num | boolean | string }
 expr = { term ~ (operation ~ term)*}
 term = _{ if | lambda | literal | call | ident | unop ~ expr | "(" ~ expr ~ ")" }
 

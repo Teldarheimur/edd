@@ -37,7 +37,7 @@ fn run(prgm: Box<[Statement]>) -> Result<Value, EitherError>{
     let mut symtab = SymbolTable::new();
 
     symtab.add_func("print", |vls| {
-        for vl in vls.to_vec() {
+        for vl in &*vls {
             println!("{vl}");
         }
         Value::Empty

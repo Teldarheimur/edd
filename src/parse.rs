@@ -1,3 +1,5 @@
+use std::error::Error;
+use std::fmt::Display;
 use std::result::Result as StdResult;
 
 use lazy_static::lazy_static;
@@ -22,6 +24,7 @@ lazy_static! {
                 | Op::infix(lte, Left)
                 | Op::infix(gt, Left)
                 | Op::infix(gte, Left))
+            .op(Op::infix(concat, Left))
             .op(Op::infix(add, Left) | Op::infix(subtract, Left))
             .op(Op::infix(multiply, Left) | Op::infix(divide, Left))
             .op(Op::prefix(not) | Op::prefix(r#ref) | Op::prefix(neg) | Op::prefix(deref))
@@ -54,6 +57,32 @@ impl EddParser {
                 "false" => Literal::Boolean(false),
                 _ => unreachable!(),
             },
+            Rule::string => {
+                let mut buf = String::new();
+                for part in pair.into_inner() {
+                    match part.as_rule() {
+                        Rule::string_part => {
+                            buf.push_str(part.as_str());
+                        },
+                        Rule::escape_c => match part.as_str() {
+                            "n" => buf.push('\n'),
+                            "r" => buf.push('\r'),
+                            "0" => buf.push('\0'),
+                            "t" => buf.push('\t'),
+                            "\\" => buf.push('\\'),
+                            "\'" => buf.push('\''),
+                            "\"" => buf.push('\"'),
+                            x if x.starts_with('x') => match u8::from_str_radix(&x[1..], 16) {
+                                Ok(c @ 0..=0x7f) => buf.push(c as char),
+                                _ => unreachable!(),
+                            }
+                            _ => todo!("return invalid escape sequence error"),
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+                Literal::String(buf.into())
+            },
             r => unreachable!("{r:?}"),
         }
     }
@@ -76,7 +105,6 @@ impl EddParser {
                         .next()
                         .unwrap()
                         .into_inner()
-                        .into_iter()
                         .map(|p| p.as_str().into())
                         .collect();
                     let body = Self::parse_expr(get_only_one(pairs).into_inner());
@@ -88,7 +116,6 @@ impl EddParser {
                     let name = pairs.next().unwrap().as_str().into();
                     let exprs = get_only_one(pairs)
                         .into_inner()
-                        .into_iter()
                         .map(|p| Self::parse_expr(p.into_inner()))
                         .collect();
 
@@ -107,6 +134,7 @@ impl EddParser {
                 Rule::lte => Expr::Lte(Box::new(lhs), Box::new(rhs)),
                 Rule::gt => Expr::Gt(Box::new(lhs), Box::new(rhs)),
                 Rule::gte => Expr::Gte(Box::new(lhs), Box::new(rhs)),
+                Rule::concat => Expr::Concat(Box::new(lhs), Box::new(rhs)),
                 _ => unreachable!(),
             })
             .map_prefix(|op, rhs| match op.as_rule() {
@@ -157,4 +185,32 @@ impl EddParser {
     }
 }
 
-pub type Result<T> = StdResult<T, pest::error::Error<Rule>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseError(Box<pest::error::Error<Rule>>);
+
+impl From<pest::error::Error<Rule>> for ParseError {
+    fn from(e: pest::error::Error<Rule>) -> Self {
+        ParseError(Box::new(e))
+    }
+}
+
+impl From<ParseError> for pest::error::Error<Rule> {
+    fn from(value: ParseError) -> Self {
+        *value.0
+    }
+}
+
+impl Display for ParseError {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Error for ParseError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+pub type Result<T> = StdResult<T, ParseError>;

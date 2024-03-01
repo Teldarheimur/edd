@@ -115,6 +115,7 @@ impl Expr {
             Expr::Sub(a, b) => a.eval(st)? - b.eval(st)?,
             Expr::Mul(a, b) => a.eval(st)? * b.eval(st)?,
             Expr::Div(a, b) => a.eval(st)? / b.eval(st)?,
+            Expr::Concat(a, b) => a.eval(st)?.concat(b.eval(st)?),
 
             Expr::Lambda(args, body) => Ok(Value::Function {
                 body: body.eval_const(st, &args)?,
@@ -134,10 +135,10 @@ impl Expr {
                 }
 
                 let Value::Function { arg_num, body } = f else {
-                    return Err(CompileTimeError::CallOnNonFunction).map_err(Cte);
+                    return Err(Cte(CompileTimeError::CallOnNonFunction));
                 };
                 if arg_num != args.len() {
-                    return Err(CompileTimeError::ArgNumMismatch(arg_num, args.len())).map_err(Cte);
+                    return Err(Cte(CompileTimeError::ArgNumMismatch(arg_num, args.len())));
                 }
 
                 let mut symtab = SymbolTable::new();
@@ -145,7 +146,7 @@ impl Expr {
                     symtab.add_var(false, format!("${i}"), arg.eval(st)?);
                 }
 
-                body.eval(&mut symtab)
+                body.eval(&symtab)
             }
 
             Expr::If(cond, if_true, if_false) => {
@@ -154,20 +155,20 @@ impl Expr {
                 match cond {
                     Value::Boolean(true) => if_true.eval(st),
                     Value::Boolean(false) => if_false.eval(st),
-                    _ => Err(CompileTimeError::ExpectedBooleanInCond).map_err(Cte),
+                    _ => Err(Cte(CompileTimeError::ExpectedBooleanInCond)),
                 }
             }
             Expr::Not(rhs) => match rhs.eval(st)? {
                 Value::Boolean(b) => Ok(Value::Boolean(!b)),
-                _ => Err(CompileTimeError::InvalidOperation("not", "non-boolean")).map_err(Cte),
+                _ => Err(Cte(CompileTimeError::InvalidOperation("not", "non-boolean"))),
             },
             Expr::Neg(rhs) => match rhs.eval(st)? {
                 Value::Integer(i @ i128::MAX) => {
-                    Err(RuntimeError::IntOverflow("neg", i, 0)).map_err(Rte)
+                    Err(Rte(RuntimeError::IntOverflow("neg", i, 0)))
                 }
                 Value::Integer(i) => Ok(Value::Integer(-i)),
                 Value::Float(f) => Ok(Value::Float(-f)),
-                _ => Err(CompileTimeError::InvalidOperation("neg", "non-numeral")).map_err(Cte),
+                _ => Err(Cte(CompileTimeError::InvalidOperation("neg", "non-numeral"))),
             },
             Expr::Ref(_rhs) => todo!(),
             Expr::Deref(_rhs) => todo!(),
