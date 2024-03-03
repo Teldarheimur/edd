@@ -1,3 +1,5 @@
+#![deprecated = "don't use"]
+
 use std::{
     cmp::Ordering,
     fmt::{self, Display},
@@ -5,20 +7,10 @@ use std::{
 };
 
 use super::Literal;
-use crate::rt::{CompileTimeError, EitherError, RuntimeError};
-
-impl Display for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Literal::Empty => write!(f, "()"),
-            Literal::Integer(v) => write!(f, "{v}"),
-            Literal::Float(v) => write!(f, "{v}"),
-            // TODO: don't rely on Rust debug print to escape it correctly
-            Literal::String(ref s) => write!(f, "{s:?}"),
-            Literal::Boolean(v) => write!(f, "{v}"),
-        }
-    }
-}
+use crate::{
+    error::{CompileTimeError, EitherError},
+    rt::RuntimeError,
+};
 
 impl Add for Literal {
     type Output = Result<Self, EitherError>;
@@ -36,7 +28,7 @@ impl Add for Literal {
                 Err(CompileTimeError::InvalidOperation("add", "boolean"))?
             }
             (Literal::String(_), _) | (_, Literal::String(_)) => Err(CompileTimeError::InvalidOperation("add", "string"))?,
-            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("add", "empty"))?,
+            (Literal::Unit, _) | (_, Literal::Unit) => Err(CompileTimeError::InvalidOperation("add", "empty"))?,
         })
     }
 }
@@ -57,7 +49,7 @@ impl Sub for Literal {
                 Err(CompileTimeError::InvalidOperation("sub", "boolean"))?
             }
             (Literal::String(_), _) | (_, Literal::String(_)) => Err(CompileTimeError::InvalidOperation("sub", "string"))?,
-            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("sub", "empty"))?,
+            (Literal::Unit, _) | (_, Literal::Unit) => Err(CompileTimeError::InvalidOperation("sub", "empty"))?,
         })
     }
 }
@@ -78,7 +70,7 @@ impl Mul for Literal {
                 Err(CompileTimeError::InvalidOperation("mul", "boolean"))?
             }
             (Literal::String(_), _) | (_, Literal::String(_)) => Err(CompileTimeError::InvalidOperation("mul", "string"))?,
-            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("mul", "empty"))?,
+            (Literal::Unit, _) | (_, Literal::Unit) => Err(CompileTimeError::InvalidOperation("mul", "empty"))?,
         })
     }
 }
@@ -99,7 +91,7 @@ impl Div for Literal {
                 Err(CompileTimeError::InvalidOperation("div", "boolean"))?
             }
             (Literal::String(_), _) | (_, Literal::String(_)) => Err(CompileTimeError::InvalidOperation("div", "string"))?,
-            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("div", "empty"))?,
+            (Literal::Unit, _) | (_, Literal::Unit) => Err(CompileTimeError::InvalidOperation("div", "empty"))?,
         })
     }
 }
@@ -127,7 +119,7 @@ impl Literal {
                 return Err(CompileTimeError::InvalidOperation("compare", "boolean"))
             }
             (Literal::String(_), _) | (_, Literal::String(_)) => Err(CompileTimeError::InvalidOperation("compare", "string"))?,
-            (Literal::Empty, _) | (_, Literal::Empty) => Err(CompileTimeError::InvalidOperation("compare", "empty"))?,
+            (Literal::Unit, _) | (_, Literal::Unit) => Err(CompileTimeError::InvalidOperation("compare", "empty"))?,
         })
     }
 }

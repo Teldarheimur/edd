@@ -1,5 +1,7 @@
+// TODO: don't parse primitive types, true, false, ... as strings, define rules for them instead
+
 num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
-    int = { ("+" | "-")? ~ ASCII_DIGIT+ }
+int = { ("+" | "-")? ~ ASCII_DIGIT+ }
 
 boolean = @{ "true" | "false" }
 ident = @{ ALPHABETIC ~ (ALPHABETIC | ASCII_DIGIT )* }
@@ -10,9 +12,29 @@ string = ${ "\"" ~
     string_part = @{ ( !("\"" | "\\" | NEWLINE) ~ ANY )+ }
     escape_c = @{ ("x" ~ ('0' .. '7') ~ HEX_DIGIT ) | ANY }
 
+type = {
+    primitive |
+    opt | ptr | slice | array | arrptr |
+    grouped
+}
+    primitive = {
+        "bool" | "byte" | "u8" | "i8" | "u16" |
+        "i16" | "u32" | "i32" | "float" | "()"
+    }
+    opt = { "?" ~ type }
+    ptr = { "*" ~ type }
+    slice = { "[]" ~ type }
+    array = { "[" ~ int ~ "]" ~ type }
+    arrptr = { "[" ~ "*" ~ "]" ~ type }
+    grouped = _{ "(" ~ type ~ ")" }
+
+type_annotation = { (":" ~ type)? }
+return_type = { type? }
+typed_ident = _{ ident ~ ":" ~ type }
+
 operation = _{
     concat | add | subtract | multiply | divide |
-    eq | neq | lt | lte | gt | gte
+    eq | neq | lt | lte | gt | gte | cast_as
 }
     add      = { "+" }
     concat   = { "++" }
@@ -25,6 +47,7 @@ operation = _{
     lte      = { "<=" }
     gt       = { ">" }
     gte      = { ">=" }
+    cast_as  = { "as" }
 
 unop = _{ neg | not | ref | deref }
     not   = { "!" }
@@ -36,6 +59,7 @@ if = {
     "if" ~ expr ~ ":" ~ expr ~ "else" ~ expr
 }
 
+typed_idents = { (typed_ident ~ ("," ~ typed_ident)*)? ~ ","? }
 idents = { (ident ~ ("," ~ ident)*)? ~ ","? }
 exprs = { (expr ~ ("," ~ expr)*)? ~ ","? }
 
@@ -48,17 +72,21 @@ call = {
 
 literal = { num | boolean | string }
 expr = { term ~ (operation ~ term)*}
-term = _{ if | lambda | literal | call | ident | unop ~ expr | "(" ~ expr ~ ")" }
+term = _{ if | lambda | literal | call | ident | unop ~ expr | "(" ~ expr ~ ")" | block }
 
 binding = _{
     let_decl | fn_decl | var_decl | rebind
 }
-    let_decl = { "let" ~ ident ~ "=" ~ expr }
-    fn_decl = { "fn" ~ ident ~ "(" ~ idents ~ ")" ~ block }
-    var_decl = { "var" ~ ident ~ "=" ~ expr }
+    let_decl = { "let" ~ ident ~ type_annotation ~ "=" ~ expr }
+    fn_decl = {
+        "fn" ~ ident ~ "(" ~ typed_idents ~ ")" ~ return_type
+        ~ block
+    }
+    var_decl = { "var" ~ ident ~ type_annotation ~ "=" ~ expr }
     rebind = { ident ~ "=" ~ expr }
-
-statement = { (binding | expr)? }
+return = { "ret" ~ expr }
+    
+statement = { (binding | return | expr)? }
     stmnts = { (statement ~ (";" ~ statement)*)? }
 
 block = _{ "{" ~ stmnts ~ "}" }

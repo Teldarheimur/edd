@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt::Display;
+use std::rc::Rc;
 use std::result::Result as StdResult;
 
 use lazy_static::lazy_static;
@@ -9,8 +10,11 @@ use pest::iterators::Pairs;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 
-use crate::ast::{Expr, Literal, Statement};
+pub mod ast;
+
+use self::ast::{Expr, Literal, Statement};
 use crate::get_only_one;
+use crate::ttype::Type;
 
 lazy_static! {
     static ref EXPR_PARSER: PrattParser<Rule> = {
@@ -28,6 +32,7 @@ lazy_static! {
             .op(Op::infix(add, Left) | Op::infix(subtract, Left))
             .op(Op::infix(multiply, Left) | Op::infix(divide, Left))
             .op(Op::prefix(not) | Op::prefix(r#ref) | Op::prefix(neg) | Op::prefix(deref))
+            .op(Op::infix(cast_as, Left))
     };
 }
 
@@ -86,10 +91,42 @@ impl EddParser {
             r => unreachable!("{r:?}"),
         }
     }
+    fn parse_type(mut pairs_t: Pairs<Rule>) -> Option<Type> {
+        let t = pairs_t.next();
+        assert!(pairs_t.next().is_none());
+        let t = get_only_one(t?.into_inner());
+        Some(match t.as_rule() {
+            Rule::primitive => match t.as_str() {
+                "bool" => Type::Bool,
+                "byte" => Type::Byte,
+                "u8" => Type::U8,
+                "i8" => Type::I8,
+                "i16" => Type::I16,
+                "u16" => Type::U16,
+                "i32" => Type::I32,
+                "u32" => Type::U32,
+                "float" => Type::I8,
+                "()" => Type::Unit,
+                _ => unreachable!(),
+            }
+            Rule::opt => Type::Option(Rc::new(Self::parse_type(t.into_inner()).unwrap())),
+            Rule::ptr => Type::Pointer(Rc::new(Self::parse_type(t.into_inner()).unwrap())),
+            Rule::slice => Type::Slice(Rc::new(Self::parse_type(t.into_inner()).unwrap())),
+            Rule::arrptr => Type::ArrayPointer(Rc::new(Self::parse_type(t.into_inner()).unwrap())),
+            Rule::array => {
+                let mut ps = t.into_inner();
+                let size = ps.next().unwrap().as_str().parse().unwrap();
+                let t = get_only_one(ps).into_inner();
+                Type::Array(Rc::new(Self::parse_type(t).unwrap()), size)
+            }
+            Rule::r#type => Self::parse_type(t.into_inner()).unwrap(),
+            _ => unreachable!(),
+        })
+    }
     fn parse_expr(expr: Pairs<Rule>) -> Expr {
         EXPR_PARSER
             .map_primary(|primary| match primary.as_rule() {
-                Rule::literal => Expr::Val(Self::parse_literal(primary.into_inner())),
+                Rule::literal => Expr::Const(Self::parse_literal(primary.into_inner())),
                 Rule::ident => Expr::Ident(primary.as_str().into()),
                 Rule::expr => Self::parse_expr(primary.into_inner()),
                 Rule::r#if => {
@@ -135,6 +172,7 @@ impl EddParser {
                 Rule::gt => Expr::Gt(Box::new(lhs), Box::new(rhs)),
                 Rule::gte => Expr::Gte(Box::new(lhs), Box::new(rhs)),
                 Rule::concat => Expr::Concat(Box::new(lhs), Box::new(rhs)),
+                Rule::cast_as => Expr::Cast(Box::new(lhs), todo!("{}", rhs)),
                 _ => unreachable!(),
             })
             .map_prefix(|op, rhs| match op.as_rule() {
@@ -148,27 +186,33 @@ impl EddParser {
     }
     fn parse_statement(mut stmnt: Pairs<Rule>) -> Statement {
         let Some(stmnt) = stmnt.next() else {
-            return Statement::Express(Expr::Val(Literal::Empty));
+            return Statement::Express(Expr::Const(Literal::Unit));
         };
         match stmnt.as_rule() {
             Rule::expr => Statement::Express(Self::parse_expr(stmnt.into_inner())),
             Rule::let_decl => {
                 let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
+                let t_annotation = Self::parse_type(binding.next().unwrap().into_inner());
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
-                Statement::Let(id, expr)
+                Statement::Let(id, t_annotation, expr)
             }
             Rule::var_decl => {
                 let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
+                let t_annotation = Self::parse_type(binding.next().unwrap().into_inner());
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
-                Statement::Var(id, expr)
+                Statement::Var(id, t_annotation, expr)
             }
             Rule::rebind => {
                 let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
                 Statement::Rebind(id, expr)
+            }
+            Rule::r#return => {
+                let expr = get_only_one(stmnt.into_inner());
+                Statement::Express(Self::parse_expr(expr.into_inner()))
             }
             e => unreachable!("{e:?}"),
         }

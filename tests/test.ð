@@ -1,4 +1,5 @@
 print(124124);
+print(print);
 
 let f = fn(x) x * 0; // hestefest
 print(f);

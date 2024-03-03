@@ -1,6 +1,6 @@
-pub mod ast;
 pub mod parse;
 pub mod rt;
+pub mod ttype;
 
 fn get_only_one<R, I: Iterator<Item = R>>(mut iter: I) -> R {
     let one = iter.next().unwrap();
