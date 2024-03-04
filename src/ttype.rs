@@ -134,8 +134,8 @@ pub fn unify_types(t1: Type, t2: Type) -> Result<Type> {
             if t1.len() != t2.len() {
                 return Err(TypeError::UnequalArraySizes(t1.len() as u16, t2.len() as u16));
             }
-            let args: Vec<_> = t1.to_vec().into_iter()
-                .zip(t2.to_vec().into_iter())
+            let args: Vec<_> = t1.into_vec().into_iter()
+                .zip(t2.into_vec().into_iter())
                 .map(|(t1, t2)| unify_types(t1, t2))
                 .collect_result()?;
 

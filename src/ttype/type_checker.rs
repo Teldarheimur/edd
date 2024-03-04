@@ -32,7 +32,7 @@ fn check_statements(
 ) -> Result<(Type, Vec<Statement>)> {
     let mut block_type = Type::Unit;
     let mut stmnts = Vec::with_capacity(statements.len());
-    for stmnt in statements.to_vec() {
+    for stmnt in statements.into_vec() {
         match stmnt {
             UntypedStatement::Express(e) => {
                 let (t, e) = check_expr(&e, stab)?;

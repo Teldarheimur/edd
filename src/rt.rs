@@ -185,7 +185,7 @@ impl Expr {
                 let mut st = st.clone();
                 let mut is_return = false;
                 let mut last_expr = Value::Unit;
-                for stmnt in stmnts.to_vec().into_iter() {
+                for stmnt in stmnts.into_vec().into_iter() {
                     last_expr = stmnt.run(&mut st, &mut is_return)?;
                     if is_return {
                         todo!("return in block unsupported")
@@ -202,7 +202,7 @@ impl Expr {
 
                 if let Value::BuiltinFn(f) = f {
                     let args: Vec<_> = args
-                        .to_vec()
+                        .into_vec()
                         .into_iter()
                         .map(|arg| arg.eval(st))
                         .collect_result()?;
