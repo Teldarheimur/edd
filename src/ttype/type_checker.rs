@@ -2,10 +2,10 @@ use collect_result::CollectResult;
 use std::rc::Rc;
 
 use super::{
-    ast::{Expr, Statement}, stab::SymbolTable, unify_types, unify_types_whint, Result, Type, TypeError
+    ast::{Expr, PlaceExpr, Statement}, stab::SymbolTable, unify_types, unify_types_whint, Result, Type, TypeError
 };
 use crate::parse::ast::{
-    Expr as UntypedExpr, Literal as UntypedLiteral, Statement as UntypedStatement,
+    PlaceExpr as UntypedPle, Expr as UntypedExpr, Literal as UntypedLiteral, Statement as UntypedStatement,
 };
 
 pub fn check_program(statements: Box<[UntypedStatement]>, stab: &SymbolTable) -> Result<(Type, Vec<Statement>)> {
@@ -51,11 +51,22 @@ fn check_statements(
                 stab.add(true, n.clone(), t.clone());
                 stmnts.push(Statement::Var(n, t, e));
             }
-            UntypedStatement::Rebind(n, e) => {
+            UntypedStatement::Rebind(UntypedPle::Ident(n), e) => {
                 let (t, e) = check_expr(&e, stab)?;
                 let _t = stab.mutate(&n, t)?;
-                stmnts.push(Statement::Rebind(n, e));
+                stmnts.push(Statement::Rebind(PlaceExpr::Ident(n), e));
             }
+            UntypedStatement::Rebind(UntypedPle::Deref(ptr_e), e) => {
+                let (ptr_t, ptr_e) = check_expr(&ptr_e, stab)?;
+                let (t, e) = check_expr(&e, stab)?;
+                let Type::Pointer(inner_t) = ptr_t else {
+                    return Err(TypeError::NotPtr(ptr_t));
+                };
+                unify_types(t, *inner_t)?;
+                stmnts.push(Statement::Rebind(PlaceExpr::Deref(Box::new(ptr_e)), e));
+            }
+            UntypedStatement::Rebind(UntypedPle::Index(arr_e, ind_e), e) => todo!("check Index({arr_e}, {ind_e}), {e})"),
+            UntypedStatement::Rebind(UntypedPle::FieldAccess(str_e, i), e) => todo!("check FieldAccess({str_e}, {i}), {e})"),
             UntypedStatement::Return(e) => {
                 let (t, e) = check_expr(&e, stab)?;
                 if let Some(ret_t) = ret.take() {
@@ -86,7 +97,7 @@ fn check_expr(expr: &UntypedExpr, stab: &mut SymbolTable) -> Result<(Type, Expr)
     match expr {
         UntypedExpr::Const(l) => Ok(check_literal(l)),
         UntypedExpr::Ident(i) => {
-            let t = stab.lookup(&i)?.as_ref().clone();
+            let t = stab.lookup(i)?.as_ref().clone();
 
             Ok((t, Expr::Ident(i.clone())))
         }
@@ -246,7 +257,7 @@ fn check_expr(expr: &UntypedExpr, stab: &mut SymbolTable) -> Result<(Type, Expr)
 
         UntypedExpr::Ref(e) => {
             let (t, e) = check_expr(e, stab)?;
-            let t = Type::Pointer(Rc::new(t));
+            let t = Type::Pointer(Box::new(t));
             Ok((t, Expr::Ref(Box::new(e))))
         }
         UntypedExpr::Deref(e) => {
@@ -295,13 +306,21 @@ fn check_expr(expr: &UntypedExpr, stab: &mut SymbolTable) -> Result<(Type, Expr)
             let (bt, be) = check_expr(body, &mut stab)?;
 
             Ok((
-                Type::Function(targs, Rc::new(bt)),
+                Type::Function(targs, Box::new(bt)),
                 Expr::Lambda(args, Box::new(be)),
             ))
         }
+        UntypedExpr::Block(stmnts) => {
+            let stab = &mut stab.clone();
+            let mut ret = None;
+            let (t, stmnts) = check_statements(stmnts.clone(), stab, &mut ret)?;
+            if ret.is_some() {
+                unimplemented!("returning from block, correctly unsupported");
+            }
+            Ok((t, Expr::Block(stmnts.into_boxed_slice())))
+        },
         UntypedExpr::Array(_) => todo!(),
         UntypedExpr::StructConstructor(_) => todo!(),
         UntypedExpr::Cast(_, _) => todo!(),
-        UntypedExpr::Block(_) => todo!(),
     }
 }

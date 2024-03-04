@@ -1,6 +1,6 @@
 use crate::rt::{RuntimeError, SymbolTable, Value, Variable};
 
-use std::{cell::RefCell, cmp::Ordering, ops::Neg, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, collections::HashMap, ops::Neg, rc::Rc};
 
 use super::Type;
 
@@ -11,11 +11,17 @@ pub enum Statement {
     Express(Rc<Type>, Expr),
     Let(Rc<str>, Rc<Type>, Expr),
     Var(Rc<str>, Rc<Type>, Expr),
-    Rebind(Rc<str>, Expr),
+    Rebind(PlaceExpr, Expr),
 
     Return(Expr),
 }
-
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlaceExpr {
+    Ident(Rc<str>),
+    Deref(Box<Expr>),
+    Index(Box<Expr>, Box<Expr>),
+    FieldAccess(Box<Expr>, Rc<str>),
+}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Ident(Rc<str>),
@@ -78,20 +84,65 @@ where
 }
 
 const MAX_RECUR: i32 = 100;
+#[derive(Clone)]
+struct InnerVar {
+    expr: Expr,
+    dead: bool,
+}
+#[derive(Default, Clone)]
+struct InnerStab {
+    table: HashMap<Rc<str>, InnerVar>,
+}
+
+impl InnerStab {
+    fn new(rt_stab: &SymbolTable) -> Self {
+        let mut ret = Self::default();
+        for (name, var) in rt_stab.iter() {
+            ret.add_var(name.clone(), match var {
+                Variable::Const(Value::BuiltinFn(_)) => Expr::Ident(name.clone()),
+                Variable::Const(v) => v.clone().into(),
+                Variable::Mutable(v) => Expr::Var(v.clone()),
+            });
+        }
+        ret
+    }
+    fn lookup(&mut self, name: &str) -> Expr {
+        let entry = self.table.get_mut(name).unwrap();
+        entry.dead = false;
+
+        entry.expr.clone()
+    }
+    fn access(&mut self, name: &str) {
+        let entry = self.table.get_mut(name).unwrap();
+        entry.dead = false;
+    }
+    fn add_var(&mut self, name: Rc<str>, expr: Expr) {
+        self.table.insert(name, InnerVar {
+            dead: true,
+            expr,
+        });
+    }
+}
 
 impl Expr {
     pub fn eval_const(mut self, st: &SymbolTable, args: &[(Rc<str>, Rc<Type>)]) -> Self {
         let mut last = self.clone();
+        let mut inner_stab = InnerStab::default();
         for _ in 0..MAX_RECUR {
-            self = self.eval_const_inner(st, args);
+            inner_stab = InnerStab::new(st);
+            self = self.eval_const_inner(&mut inner_stab, args);
             if last == self {
                 break;
             }
             last = self.clone();
         }
+
+        self.remove_dead_bindings(inner_stab)
+    }
+    fn remove_dead_bindings(self, _stab: InnerStab) -> Self {
         self
     }
-    fn eval_const_inner(self, st: &SymbolTable, args: &[(Rc<str>, Rc<Type>)]) -> Self {
+    fn eval_const_inner(self, st: &mut InnerStab, args: &[(Rc<str>, Rc<Type>)]) -> Self {
         match self {
             Expr::Ident(i) => {
                 if i.starts_with('$') {
@@ -101,10 +152,7 @@ impl Expr {
                     return Expr::Ident(format!("${i}").into());
                 }
 
-                match st.lookup_raw(&i).unwrap() {
-                    Variable::Const(v) => v.into(),
-                    Variable::Mutable(var) => Expr::Var(var),
-                }
+                st.lookup(&i)
             }
             Expr::Var(_)
             | Expr::Raise(_)
@@ -252,7 +300,41 @@ impl Expr {
             Expr::Array(_) => todo!(),
             Expr::StructConstructor(_) => todo!(),
             Expr::Cast(_, _, _) => todo!(),
-            Expr::Block(_) => todo!(),
+            Expr::Block(mut stmnts) => {
+                let mut st = st.clone();
+                stmnts
+                    .iter_mut()
+                    .for_each(|stmnt| {
+                        *stmnt = match std::mem::replace(stmnt, Statement::Return(Expr::ConstUnit)) {
+                            Statement::Let(n, t, e) => {
+                                let e = e.eval_const_inner(&mut st, args);
+                                st.add_var(n.clone(), e.clone());
+                                Statement::Let(n, t, e)
+                            }
+                            Statement::Var(n, t, e) => {
+                                let e = e.eval_const_inner(&mut st, args);
+                                st.add_var(n.clone(), Expr::Ident(n.clone()));
+                                Statement::Var(n, t, e)
+                            }
+                            Statement::Rebind(pl, e) => {
+                                let pl = match pl {
+                                    PlaceExpr::Ident(n) => {
+                                        st.access(&n);
+                                        PlaceExpr::Ident(n)
+                                    }
+                                    PlaceExpr::Deref(e) => todo!("eval_const(deref({e}))"),
+                                    PlaceExpr::Index(e, i) => todo!("eval_const(index({e}, {i}))"),
+                                    PlaceExpr::FieldAccess(e, i) => todo!("eval_const(fieldaccess({e}, {i}))"),
+                                };
+                                let e = e.eval_const_inner(&mut st, args);
+                                Statement::Rebind(pl, e)
+                            }
+                            Statement::Express(t, e) => Statement::Express(t, e.eval_const_inner(&mut st, args)),
+                            Statement::Return(e) => Statement::Return(e.eval_const_inner(&mut st, args)),
+                        };
+                });
+                Expr::Block(stmnts).remove_dead_bindings(st)
+            }
         }
     }
     fn as_value(&self) -> Option<Value> {

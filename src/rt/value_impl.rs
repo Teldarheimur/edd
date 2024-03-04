@@ -6,7 +6,7 @@ use std::{
 
 use crate::ttype::ast::Expr;
 
-use super::{RuntimeError, Value};
+use super::{RuntimeError, Value, Variable};
 
 impl From<Value> for Expr {
     fn from(value: Value) -> Self {
@@ -29,6 +29,10 @@ impl From<Value> for Expr {
                 Box::new(body),
             ),
             Value::Null => Expr::ConstNull,
+            Value::Ref(var) => match *var {
+                Variable::Const(v) => Expr::Ref(Box::new(Self::from(v))),
+                Variable::Mutable(var) => Expr::Ref(Box::new(Expr::Var(var))),
+            }
         }
     }
 }
@@ -62,6 +66,10 @@ impl Display for Value {
             }
             Value::BuiltinFn(func) => write!(f, "fn({func:p})"),
             Value::Null => write!(f, "null"),
+            Value::Ref(var) => match &**var {
+                Variable::Const(v) => write!(f, "&{v}"),
+                Variable::Mutable(v) => write!(f, "&{}", v.borrow()),
+            }
         }
     }
 }

@@ -1,5 +1,7 @@
 use std::{fmt::{self, Display}, rc::Rc, result::Result as StdResult};
 
+use collect_result::CollectResult;
+
 pub mod type_checker;
 pub mod ast;
 pub mod stab;
@@ -22,15 +24,15 @@ pub enum Type {
     /// limited support
     Float,
 
-    Function(Rc<[Type]>, Rc<Type>),
-    Struct(Rc<[(Box<str>, Type)]>),
+    Function(Box<[Type]>, Box<Type>),
+    Struct(Box<[(Rc<str>, Type)]>),
     Unit,
 
-    Option(Rc<Type>),
-    Pointer(Rc<Type>),
-    ArrayPointer(Rc<Type>),
-    Slice(Rc<Type>),
-    Array(Rc<Type>, u16),
+    Option(Box<Type>),
+    Pointer(Box<Type>),
+    ArrayPointer(Box<Type>),
+    Slice(Box<Type>),
+    Array(Box<Type>, u16),
 }
 
 impl Display for Type {
@@ -82,6 +84,9 @@ pub enum TypeError {
     Undefined(Box<str>),
     NotMutable(Box<str>),
     CannotCall(Type),
+    UnequalArraySizes(u16, u16),
+    UnequalArgLen(u16, u16),
+    NotPtr(Type),
 }
 
 impl Display for TypeError {
@@ -93,6 +98,9 @@ impl Display for TypeError {
             TypeError::Undefined(v) => write!(f, "undefined variable {v}"),
             TypeError::NotMutable(v) => write!(f, "invalid re-assigment of non-mutable variable {v}"),
             TypeError::CannotCall(t) => write!(f, "cannot call type {t}"),
+            TypeError::UnequalArraySizes(s1, s2) => write!(f, "arrays did not have same length: {s1} != {s2}"),
+            TypeError::UnequalArgLen(s1, s2) => write!(f, "functions did not have number of arguments: {s1} != {s2}"),
+            TypeError::NotPtr(t) => write!(f, "type {t} is not a pointer"),
         }
     }
 }
@@ -116,6 +124,28 @@ pub fn unify_types(t1: Type, t2: Type) -> Result<Type> {
         (a @ U16, CompInteger) | (CompInteger, a @ U16) => Ok(a),
         (a @ I32, CompInteger) | (CompInteger, a @ I32) => Ok(a),
         (a @ U32, CompInteger) | (CompInteger, a @ U32) => Ok(a),
+        (Array(t1, s1), Array(t2, s2)) => {
+            if s1 != s2 {
+                return Err(TypeError::UnequalArraySizes(s1, s2));
+            }
+            Ok(Array(Box::new(unify_types(*t1, *t2)?), s1))
+        }
+        (Function(t1, rt1), Function(t2, rt2)) => {
+            if t1.len() != t2.len() {
+                return Err(TypeError::UnequalArraySizes(t1.len() as u16, t2.len() as u16));
+            }
+            let args: Vec<_> = t1.to_vec().into_iter()
+                .zip(t2.to_vec().into_iter())
+                .map(|(t1, t2)| unify_types(t1, t2))
+                .collect_result()?;
+
+            Ok(Function(args.into_boxed_slice(), Box::new(unify_types(*rt1, *rt2)?)))
+        }
+        (ArrayPointer(t1), ArrayPointer(t2)) => Ok(ArrayPointer(Box::new(unify_types(*t1, *t2)?))),
+        (Pointer(t1), Pointer(t2)) => Ok(Pointer(Box::new(unify_types(*t1, *t2)?))),
+        (Option(t1), Option(t2)) => Ok(Option(Box::new(unify_types(*t1, *t2)?))),
+        (Slice(t1), Slice(t2)) => Ok(Slice(Box::new(unify_types(*t1, *t2)?))),
+        (Struct(_), Struct(_)) => todo!(),
         (t1, t2) => Err(TypeError::TypeMismach(t1, t2)),
     }
 }

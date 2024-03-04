@@ -4,7 +4,7 @@ num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
 int = { ("+" | "-")? ~ ASCII_DIGIT+ }
 
 boolean = @{ "true" | "false" }
-ident = @{ ALPHABETIC ~ (ALPHABETIC | ASCII_DIGIT )* }
+ident = @{ ALPHABETIC ~ (ALPHABETIC | ASCII_DIGIT | "_" )* }
 
 string = ${ "\"" ~
     (string_part | ("\\" ~ escape_c))*
@@ -14,7 +14,7 @@ string = ${ "\"" ~
 
 type = {
     primitive |
-    opt | ptr | slice | array | arrptr |
+    opt | ptr | slice | array | arrptr | fntype |
     grouped
 }
     primitive = {
@@ -26,7 +26,10 @@ type = {
     slice = { "[]" ~ type }
     array = { "[" ~ int ~ "]" ~ type }
     arrptr = { "[" ~ "*" ~ "]" ~ type }
+    fntype = { "fn" ~ "(" ~ types ~ ")" ~ type }
     grouped = _{ "(" ~ type ~ ")" }
+
+types = { (type ~ ("," ~ type)*)? ~ ","? }
 
 type_annotation = { (":" ~ type)? }
 return_type = { type? }
@@ -83,16 +86,24 @@ binding = _{
         ~ block
     }
     var_decl = { "var" ~ ident ~ type_annotation ~ "=" ~ expr }
-    rebind = { ident ~ "=" ~ expr }
+    rebind = { pl_expr ~ "=" ~ expr }
 return = { "ret" ~ expr }
-    
-statement = { (binding | return | expr)? }
-    stmnts = { (statement ~ (";" ~ statement)*)? }
+pl_expr = { ident |
+    deref_expr | array_index | field_access |
+    "(" ~ pl_expr ~ ")"
+}
+    deref_expr = { "*" ~ expr }
+    array_index = { expr ~ "[" ~ expr ~ "]" }
+    field_access = { expr ~ "." ~ ident }
 
-block = _{ "{" ~ stmnts ~ "}" }
+statement = { (binding | return | expr)? }
+    stmnts = _{ (statement ~ (";" ~ statement)*)? }
+
+block = { "{" ~ stmnts ~ "}" }
+implicit_block = { stmnts }
 
 program = _{ SOI ~
-    stmnts
+    implicit_block
 ~ EOI }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }

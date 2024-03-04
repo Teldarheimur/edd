@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use super::{Expr, Statement};
+use super::{Expr, PlaceExpr, Statement};
 
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -10,6 +10,17 @@ impl Display for Statement {
             Statement::Var(n, t, e) => write!(f, "var {n}: {t} = {e}"),
             Statement::Rebind(n, e) => write!(f, "{n} = {e}"),
             Statement::Return(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl Display for PlaceExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ident(i) => write!(f, "{i}"),
+            Self::Deref(a) => write!(f, "*{a}"),
+            Self::Index(e, i) => write!(f, "{e}[{i}]"),
+            Self::FieldAccess(e, i) => write!(f, "{e}.{i}"),
         }
     }
 }
@@ -87,8 +98,13 @@ impl Display for Expr {
             Expr::Cast(val, ft, tt) => write!(f, "({val} as {tt} (<-{ft})"),
             Expr::Block(stmnts) => {
                 write!(f, "{{ ")?;
+                let mut first = true;
                 for s in stmnts.iter() {
-                    write!(f, "{s}; ")?;
+                    if !first {
+                        write!(f, "; ")?;
+                    }
+                    first = false;
+                    write!(f, "{s}")?;
                 }
                 write!(f, "}}")
             }

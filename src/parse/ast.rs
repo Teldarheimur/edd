@@ -3,14 +3,12 @@ use std::rc::Rc;
 
 use crate::ttype::Type;
 
-// mod literal_impl;
-
 #[derive(Debug, Clone)]
 pub enum Statement {
     Express(Expr),
     Let(Rc<str>, Option<Type>, Expr),
     Var(Rc<str>, Option<Type>, Expr),
-    Rebind(Rc<str>, Expr),
+    Rebind(PlaceExpr, Expr),
 
     Return(Expr),
 }
@@ -37,6 +35,13 @@ impl Display for Literal {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum PlaceExpr {
+    Ident(Rc<str>),
+    Deref(Expr),
+    Index(Expr, Expr),
+    FieldAccess(Expr, Rc<str>),
+}
 #[derive(Debug, Clone)]
 pub enum Expr {
     Ident(Rc<str>),
@@ -130,11 +135,27 @@ impl Display for Expr {
             Expr::Cast(val, t) => write!(f, "({val} as {t}"),
             Expr::Block(stmnts) => {
                 write!(f, "{{ ")?;
+                let mut first = true;
                 for s in stmnts.iter() {
-                    write!(f, "{s}; ")?;
+                    if !first {
+                        write!(f, "; ")?;
+                    }
+                    first = false;
+                    write!(f, "{s}")?;
                 }
-                write!(f, "}}")
+                write!(f, " }}")
             }
+        }
+    }
+}
+
+impl Display for PlaceExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ident(i) => write!(f, "{i}"),
+            Self::Deref(a) => write!(f, "*{a}"),
+            Self::Index(e, i) => write!(f, "{e}[{i}]"),
+            Self::FieldAccess(e, i) => write!(f, "{e}.{i}"),
         }
     }
 }
