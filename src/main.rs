@@ -8,7 +8,7 @@ use edd::{
     }
 };
 
-use std::{env::args_os, fs::File, io::Read, rc::Rc};
+use std::{env::args_os, fs::File, io::Read};
 
 fn main() {
     let path = args_os().nth(1).expect("input file");
@@ -33,7 +33,7 @@ fn main() {
 
     let stab = {
         let mut stab = SymbolTypes::new();
-        stab.add(false, "print", Rc::new(Type::Function(Box::new([Type::Any]), Box::new(Type::Unit))));
+        stab.add(false, "print", Type::Function(Box::new([Type::Opaque]), Box::new(Type::Unit)));
         stab
     };
 

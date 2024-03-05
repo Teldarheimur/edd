@@ -1,14 +1,20 @@
-use std::{fmt::{self, Display}, rc::Rc, result::Result as StdResult};
+use std::{collections::HashSet, fmt::{self, Display}, rc::Rc, result::Result as StdResult};
 
 use collect_result::CollectResult;
+
+use self::typevar::TypeVar;
 
 pub mod type_checker;
 pub mod ast;
 pub mod stab;
+pub mod typevar;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub type Result<T> = StdResult<T, TypeError>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
-    Any,
+    Unknown(TypeVar),
+    Opaque,
 
     Bool,
     Byte,
@@ -24,21 +30,27 @@ pub enum Type {
     /// limited support
     Float,
 
-    Function(Box<[Type]>, Box<Type>),
-    Struct(Box<[(Rc<str>, Type)]>),
+    Function(Box<[Self]>, Box<Self>),
+    Struct(Box<[(Rc<str>, Self)]>),
     Unit,
 
-    Option(Box<Type>),
-    Pointer(Box<Type>),
-    ArrayPointer(Box<Type>),
-    Slice(Box<Type>),
-    Array(Box<Type>, u16),
+    Option(Box<Self>),
+    Pointer(Box<Self>),
+    ArrayPointer(Box<Self>),
+    Slice(Box<Self>),
+    Array(Box<Self>, u16),
+}
+impl Type {
+    fn any() -> Type {
+        Type::Unknown(TypeVar::any_type())
+    }
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Any => write!(f, "any"),
+            Type::Unknown(v) => write!(f, "{v}"),
+            Type::Opaque => write!(f, "opaque"),
             Type::Bool => write!(f, "bool"),
             Type::Byte => write!(f, "byte"),
             Type::U8 => write!(f, "u8"),
@@ -73,12 +85,10 @@ impl Display for Type {
     }
 }
 
-pub type Result<T> = StdResult<T, TypeError>;
-
 #[derive(Debug, Clone)]
 pub enum TypeError {
     /// expected, actual
-    TypeMismach(Type, Type),
+    TypeMismatch(Type, Type),
     InvalidOp(&'static str, Type),
     CannotDeref(Type),
     Undefined(Box<str>),
@@ -87,12 +97,14 @@ pub enum TypeError {
     UnequalArraySizes(u16, u16),
     UnequalArgLen(u16, u16),
     NotPtr(Type),
+    DisjointContraints(HashSet<Type>, HashSet<Type>),
+    NonConcreteType,
 }
 
 impl Display for TypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeError::TypeMismach(e, a) => write!(f, "expected type {e}, got {a}"),
+            TypeError::TypeMismatch(e, a) => write!(f, "expected type {e}, got {a}"),
             TypeError::InvalidOp(op, t) => write!(f, "operation {op} is invalid for type {t}"),
             TypeError::CannotDeref(t) => write!(f, "cannot dereference type {t}"),
             TypeError::Undefined(v) => write!(f, "undefined variable {v}"),
@@ -101,23 +113,23 @@ impl Display for TypeError {
             TypeError::UnequalArraySizes(s1, s2) => write!(f, "arrays did not have same length: {s1} != {s2}"),
             TypeError::UnequalArgLen(s1, s2) => write!(f, "functions did not have number of arguments: {s1} != {s2}"),
             TypeError::NotPtr(t) => write!(f, "type {t} is not a pointer"),
+            TypeError::DisjointContraints(s1, s2) => write!(f, "incompatible type constraints: {s1:?} {s2:?}"),
+            TypeError::NonConcreteType => write!(f, "could not infer concrete type"),
         }
     }
 }
 
-#[inline]
-pub fn unify_types_whint(type_hint: Option<Type>, t: Type) -> Result<Type> {
-    let Some(th) = type_hint else {
-        return Ok(t);
-    };
-    unify_types(th, t)
-}
 pub fn unify_types(t1: Type, t2: Type) -> Result<Type> {
     use self::Type::*;
 
     match (t1, t2) {
         (a, b) if a == b => Ok(a),
-        (t, Any) | (Any, t) => Ok(t),
+        // scary type!!!
+        (Opaque, _) | (_, Opaque) => Ok(Opaque),
+        (Unknown(t1), Unknown(t2)) => {
+            Ok(Type::Unknown(t1.merge(&t2)?))
+        }
+        (t, Unknown(tv)) | (Unknown(tv), t) => tv.merge_with_type(t),
         (a @ I8, CompInteger) | (CompInteger, a @ I8) => Ok(a),
         (a @ U8, CompInteger) | (CompInteger, a @ U8) => Ok(a),
         (a @ I16, CompInteger) | (CompInteger, a @ I16) => Ok(a),
@@ -132,20 +144,30 @@ pub fn unify_types(t1: Type, t2: Type) -> Result<Type> {
         }
         (Function(t1, rt1), Function(t2, rt2)) => {
             if t1.len() != t2.len() {
-                return Err(TypeError::UnequalArraySizes(t1.len() as u16, t2.len() as u16));
+                return Err(TypeError::UnequalArraySizes(
+                    t1.len() as u16,
+                    t2.len() as u16,
+                ));
             }
-            let args: Vec<_> = t1.into_vec().into_iter()
+            let args: Vec<_> = t1
+                .into_vec()
+                .into_iter()
                 .zip(t2.into_vec().into_iter())
                 .map(|(t1, t2)| unify_types(t1, t2))
                 .collect_result()?;
 
-            Ok(Function(args.into_boxed_slice(), Box::new(unify_types(*rt1, *rt2)?)))
+            Ok(Function(
+                args.into_boxed_slice(),
+                Box::new(unify_types(*rt1, *rt2)?),
+            ))
         }
-        (ArrayPointer(t1), ArrayPointer(t2)) => Ok(ArrayPointer(Box::new(unify_types(*t1, *t2)?))),
+        (ArrayPointer(t1), ArrayPointer(t2)) => {
+            Ok(ArrayPointer(Box::new(unify_types(*t1, *t2)?)))
+        }
         (Pointer(t1), Pointer(t2)) => Ok(Pointer(Box::new(unify_types(*t1, *t2)?))),
         (Option(t1), Option(t2)) => Ok(Option(Box::new(unify_types(*t1, *t2)?))),
         (Slice(t1), Slice(t2)) => Ok(Slice(Box::new(unify_types(*t1, *t2)?))),
         (Struct(_), Struct(_)) => todo!(),
-        (t1, t2) => Err(TypeError::TypeMismach(t1, t2)),
+        (t1, t2) => Err(TypeError::TypeMismatch(t1, t2)),
     }
 }

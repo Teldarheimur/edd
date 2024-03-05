@@ -1,7 +1,7 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Display},
-    ops::{Add, Div, Mul, Neg, Sub}, rc::Rc,
+    ops::{Add, Div, Mul, Neg, Sub},
 };
 
 use crate::ttype::ast::Expr;
@@ -25,7 +25,7 @@ impl From<Value> for Expr {
             Value::BuiltinFn(_) => unimplemented!(),
             Value::Function { args, body } => Expr::Lambda(
                 args.into_vec().into_iter().enumerate()
-                    .map(|(n, t)| (format!("${n}").into(), Rc::new(t))).collect(),
+                    .map(|(n, t)| (format!("${n}").into(), t)).collect(),
                 Box::new(body),
             ),
             Value::Null => Expr::ConstNull,

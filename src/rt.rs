@@ -195,7 +195,7 @@ impl Expr {
             }
             Expr::Lambda(args, body) => Ok(Value::Function {
                 body: body.eval_const(st, &args),
-                args: args.iter().map(|(_, t)| t.as_ref().clone()).collect(),
+                args: args.iter().map(|(_, t)| t.clone()).collect(),
             }),
             Expr::Call(name, args) => {
                 let f = st.lookup(&name).expect("lookup should fail in type checking");

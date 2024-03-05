@@ -82,9 +82,7 @@ impl Display for Expr {
             Expr::Ref(a) => write!(f, "&{a}"),
             Expr::Neg(a) => write!(f, "-{a}"),
             Expr::Deref(a) => write!(f, "*{a}"),
-            Expr::Array(a) => f.debug_list()
-                .entries(&**a)
-                .finish(),
+            Expr::Array(_a) => todo!(),
             Expr::StructConstructor(strct) => {
                 write!(f, "{{ ")?;
                 for (name, val) in strct.iter() {
