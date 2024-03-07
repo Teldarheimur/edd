@@ -1,6 +1,8 @@
 use std::{collections::HashMap, rc::Rc};
 
-use super::{unify_types, Result, Type, TypeError};
+use crate::parse::span::Span;
+
+use super::{unify_types, Result, Type, TypeErrorType};
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
@@ -30,23 +32,23 @@ impl SymbolTable {
         self.map
             .insert(name.into(), Symbol::new(ty, mutable));
     }
-    pub fn lookup_raw(&self, name: &str) -> Result<Symbol> {
+    pub fn lookup_raw(&self, name: &str) -> Result<Symbol, TypeErrorType> {
         self.map
             .get(name)
             .cloned()
-            .ok_or_else(|| TypeError::Undefined(name.into()))
+            .ok_or_else(|| TypeErrorType::Undefined(name.into()))
     }
-    pub fn lookup(&self, name: &str) -> Result<Type> {
+    pub fn lookup(&self, name: &str) -> Result<Type, TypeErrorType> {
         self.lookup_raw(name).map(|sym| sym.s_type)
     }
-    pub fn mutate(&mut self, name: &str, t: Type) -> Result<Type> {
+    pub fn mutate(&mut self, span: Span, name: &str, t: Type) -> Result<Type> {
         let Some(Symbol { s_type, mutable }) = self.map.get(name).cloned() else {
-            return Err(TypeError::Undefined(name.into()));
+            return Err(TypeErrorType::Undefined(name.into()).span(span));
         };
         if !mutable {
-            return Err(TypeError::NotMutable(name.into()));
+            return Err(TypeErrorType::NotMutable(name.into()).span(span));
         }
-        let ut = unify_types(t, s_type)?;
+        let ut = unify_types(span, t, s_type)?;
         self.map.get_mut(name).unwrap().s_type = ut.clone();
 
         Ok(ut)

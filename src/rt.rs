@@ -1,18 +1,34 @@
 use std::{cell::RefCell, cmp::Ordering, collections::HashMap, ops::Neg, rc::Rc};
 
-use crate::ttype::{ast::{Expr, PlaceExpr, Statement}, Type};
+use crate::{parse::span::Span, ttype::{ast::{Expr, PlaceExpr, Statement}, Type}};
 
 use collect_result::CollectResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RuntimeError {
+pub struct RuntimeError {
+    pub error_type: RuntimeErrorType,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RuntimeErrorType {
     DivideByZero,
     IntOverflow(&'static str, i128, i128),
 }
 
-impl From<RuntimeError> for Expr {
-    fn from(value: RuntimeError) -> Self {
-        Expr::Raise(Box::new(value))
+impl RuntimeErrorType {
+    #[inline]
+    const fn span(self,span: Span) -> RuntimeError {
+        RuntimeError {
+            error_type: self,
+            span,
+        }
+    }
+}
+
+impl From<RuntimeErrorType> for Expr {
+    fn from(value: RuntimeErrorType) -> Self {
+        Expr::Raise(Span::default(), Box::new(value))
     }
 }
 
@@ -115,22 +131,22 @@ impl SymbolTable {
 impl Statement {
     pub fn run(self, symtab: &mut SymbolTable, is_return: &mut bool) -> Result<Value, RuntimeError> {
         match self {
-            Statement::Express(_t, e) => e.eval(symtab),
-            Statement::Let(n, _t, expr) => {
+            Statement::Express(_, _t, e) => e.eval(symtab),
+            Statement::Let(_, n, _t, expr) => {
                 let expr = expr.eval(symtab)?;
                 symtab.add_var(false, n, expr);
                 Ok(Value::Unit)
             }
-            Statement::Var(n, _t, expr) => {
+            Statement::Var(_, n, _t, expr) => {
                 let expr = expr.eval(symtab)?;
                 symtab.add_var(true, n, expr);
                 Ok(Value::Unit)
             }
-            Statement::Rebind(pl, expr) => {
+            Statement::Rebind(_, pl, expr) => {
                 let val = expr.eval(symtab)?;
                 match pl {
-                    PlaceExpr::Ident(n) => symtab.mutate(&n, val).unwrap(),
-                    PlaceExpr::Deref(ptr) => {
+                    PlaceExpr::Ident(_, n) => symtab.mutate(&n, val).unwrap(),
+                    PlaceExpr::Deref(_, ptr) => {
                         let ptr = ptr.eval(symtab)?;
                         let Value::Ref(v) = ptr else {
                             unreachable!();
@@ -140,12 +156,12 @@ impl Statement {
                         };
                         *v.borrow_mut() = val;
                     }
-                    PlaceExpr::FieldAccess(_, _) => todo!(),
-                    PlaceExpr::Index(_, _) => todo!(),
+                    PlaceExpr::FieldAccess(_, _, _) => todo!(),
+                    PlaceExpr::Index(_, _, _) => todo!(),
                 }
                 Ok(Value::Unit)
             }
-            Statement::Return(e) => {
+            Statement::Return(_, e) => {
                 *is_return = true;
                 e.eval(symtab)
             }
@@ -156,32 +172,32 @@ impl Statement {
 impl Expr {
     pub fn eval(self, st: &SymbolTable) -> Result<Value, RuntimeError> {
         match self {
-            Expr::Ident(i) => Ok(st.lookup(&i).expect("lookup fail should be caught by type checker")),
-            Expr::ConstBoolean(v) => Ok(Value::Boolean(v)),
-            Expr::ConstI8(v) => Ok(Value::I8(v)),
-            Expr::ConstU8(v) => Ok(Value::U8(v)),
-            Expr::ConstI16(v) => Ok(Value::I16(v)),
-            Expr::ConstU16(v) => Ok(Value::U16(v)),
-            Expr::ConstI32(v) => Ok(Value::I32(v)),
-            Expr::ConstU32(v) => Ok(Value::U32(v)),
-            Expr::ConstFloat(v) => Ok(Value::Float(v)),
-            Expr::ConstCompInteger(v) => Ok(Value::CompInt(v)),
-            Expr::ConstString(v) => Ok(Value::String(v)),
-            Expr::ConstUnit => Ok(Value::Unit),
-            Expr::ConstNull => Ok(Value::Null),
-            Expr::Array(_) => todo!(),
-            Expr::StructConstructor(_) => todo!(),
-            Expr::Cast(_, _, _) => todo!(),
+            Expr::Ident(_, i) => Ok(st.lookup(&i).expect("lookup fail should be caught by type checker")),
+            Expr::ConstBoolean(_, v) => Ok(Value::Boolean(v)),
+            Expr::ConstI8(_, v) => Ok(Value::I8(v)),
+            Expr::ConstU8(_, v) => Ok(Value::U8(v)),
+            Expr::ConstI16(_, v) => Ok(Value::I16(v)),
+            Expr::ConstU16(_, v) => Ok(Value::U16(v)),
+            Expr::ConstI32(_, v) => Ok(Value::I32(v)),
+            Expr::ConstU32(_, v) => Ok(Value::U32(v)),
+            Expr::ConstFloat(_, v) => Ok(Value::Float(v)),
+            Expr::ConstCompInteger(_, v) => Ok(Value::CompInt(v)),
+            Expr::ConstString(_, v) => Ok(Value::String(v)),
+            Expr::ConstUnit(_, ) => Ok(Value::Unit),
+            Expr::ConstNull(_, ) => Ok(Value::Null),
+            Expr::Array(_, _) => todo!(),
+            Expr::StructConstructor(_, _) => todo!(),
+            Expr::Cast(_, _, _, _) => todo!(),
 
-            Expr::Var(v) => Ok(v.borrow().clone()),
-            Expr::Raise(e) => Err(*e),
-            Expr::Add(a, b) => a.eval(st)? + b.eval(st)?,
-            Expr::Sub(a, b) => a.eval(st)? - b.eval(st)?,
-            Expr::Mul(a, b) => a.eval(st)? * b.eval(st)?,
-            Expr::Div(a, b) => a.eval(st)? / b.eval(st)?,
-            Expr::Concat(a, b) => Ok(a.eval(st)?.concat(b.eval(st)?)),
+            Expr::Var(_, v) => Ok(v.borrow().clone()),
+            Expr::Raise(sp, e) => Err(e.span(sp)),
+            Expr::Add(span, a, b) => (a.eval(st)? + b.eval(st)?).map_err(|e| e.span(span)),
+            Expr::Sub(span, a, b) => (a.eval(st)? - b.eval(st)?).map_err(|e| e.span(span)),
+            Expr::Mul(span, a, b) => (a.eval(st)? * b.eval(st)?).map_err(|e| e.span(span)),
+            Expr::Div(span, a, b) => (a.eval(st)? / b.eval(st)?).map_err(|e| e.span(span)),
+            Expr::Concat(_, a, b) => Ok(a.eval(st)?.concat(b.eval(st)?)),
 
-            Expr::Block(stmnts) => {
+            Expr::Block(_, stmnts) => {
                 let mut st = st.clone();
                 let mut is_return = false;
                 let mut last_expr = Value::Unit;
@@ -193,11 +209,11 @@ impl Expr {
                 }
                 Ok(last_expr)
             }
-            Expr::Lambda(args, _, body) => Ok(Value::Function {
+            Expr::Lambda(_, args, _, body) => Ok(Value::Function {
                 body: body.eval_const(st, &args),
                 args: args.iter().map(|(_, t)| t.clone()).collect(),
             }),
-            Expr::Call(name, args) => {
+            Expr::Call(_, name, args) => {
                 let f = st.lookup(&name).expect("lookup should fail in type checking");
 
                 if let Value::BuiltinFn(f) = f {
@@ -222,43 +238,43 @@ impl Expr {
                 body.eval(&symtab)
             }
 
-            Expr::If(cond, if_true, if_false) => {
+            Expr::If(_, cond, if_true, if_false) => {
                 match cond.eval(st)? {
                     Value::Boolean(true) => if_true.eval(st),
                     Value::Boolean(false) => if_false.eval(st),
                     _ => unreachable!(),
                 }
             }
-            Expr::Not(rhs) => match rhs.eval(st)? {
+            Expr::Not(_, rhs) => match rhs.eval(st)? {
                 Value::Boolean(b) => Ok(Value::Boolean(!b)),
                 _ => unreachable!(),
             },
-            Expr::Neg(val) => val.eval(st)?.neg(),
-            Expr::Ref(referee) => match *referee {
-                Expr::Ident(i) => Ok(Value::Ref(Box::new(st.lookup_raw(&i).unwrap()))),
-                Expr::Var(v) => Ok(Value::Ref(Box::new(Variable::Mutable(v)))),
+            Expr::Neg(span, val) => val.eval(st)?.neg().map_err(|e| e.span(span)),
+            Expr::Ref(_, referee) => match *referee {
+                Expr::Ident(_, i) => Ok(Value::Ref(Box::new(st.lookup_raw(&i).unwrap()))),
+                Expr::Var(_, v) => Ok(Value::Ref(Box::new(Variable::Mutable(v)))),
                 e => Ok(Value::Ref(Box::new(Variable::Const(e.eval(st)?)))),
             },
-            Expr::Deref(reference) => match reference.eval(st).unwrap() {
+            Expr::Deref(_, reference) => match reference.eval(st).unwrap() {
                 Value::Ref(r) => Ok(r.get()),
                 _ => unreachable!(),
             }
-            Expr::Eq(a, b, _t) => Ok(Value::Boolean(a
+            Expr::Eq(_, a, b, _t) => Ok(Value::Boolean(a
                 .eval(st)?
                 .cmp_op(b.eval(st)?, Ordering::Equal, false))),
-            Expr::Neq(a, b, _t) => Ok(Value::Boolean(a
+            Expr::Neq(_, a, b, _t) => Ok(Value::Boolean(a
                 .eval(st)?
                 .cmp_op(b.eval(st)?, Ordering::Equal, true))),
-            Expr::Lt(a, b, _t) => Ok(Value::Boolean(a
+            Expr::Lt(_, a, b, _t) => Ok(Value::Boolean(a
                 .eval(st)?
                 .cmp_op(b.eval(st)?, Ordering::Less, false))),
-            Expr::Lte(a, b, _t) => Ok(Value::Boolean(a
+            Expr::Lte(_, a, b, _t) => Ok(Value::Boolean(a
                 .eval(st)?
                 .cmp_op(b.eval(st)?, Ordering::Greater, true))),
-            Expr::Gt(a, b, _t) => Ok(Value::Boolean(a
+            Expr::Gt(_, a, b, _t) => Ok(Value::Boolean(a
                 .eval(st)?
                 .cmp_op(b.eval(st)?, Ordering::Greater, false))),
-            Expr::Gte(a, b, _t) => Ok(Value::Boolean(a
+            Expr::Gte(_, a, b, _t) => Ok(Value::Boolean(a
                 .eval(st)?
                 .cmp_op(b.eval(st)?, Ordering::Less, true))),
         }

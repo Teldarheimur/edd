@@ -11,6 +11,7 @@ use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 
 pub mod ast;
+pub mod span;
 
 use self::ast::{Expr, Literal, PlaceExpr, Statement};
 use crate::get_only_one;
@@ -141,19 +142,21 @@ impl EddParser {
     }
     fn parse_expr(expr: Pairs<Rule>) -> Expr {
         EXPR_PARSER
-            .map_primary(|primary| match primary.as_rule() {
-                Rule::literal => Expr::Const(Self::parse_literal(primary.into_inner())),
-                Rule::ident => Expr::Ident(primary.as_str().into()),
-                Rule::expr => Self::parse_expr(primary.into_inner()),
+            .map_primary(|p| match p.as_rule() {
+                Rule::literal => Expr::Const(p.as_span().into(), Self::parse_literal(p.into_inner())),
+                Rule::ident => Expr::Ident(p.as_span().into(), p.as_str().into()),
+                Rule::expr => Self::parse_expr(p.into_inner()),
                 Rule::r#if => {
-                    let mut pairs = primary.into_inner();
+                    let span = p.as_span().into();
+                    let mut pairs = p.into_inner();
                     let c = Self::parse_expr(pairs.next().unwrap().into_inner());
                     let t = Self::parse_expr(pairs.next().unwrap().into_inner());
                     let e = Self::parse_expr(get_only_one(pairs).into_inner());
-                    Expr::If(Box::new(c), Box::new(t), Box::new(e))
+                    Expr::If(span, Box::new(c), Box::new(t), Box::new(e))
                 }
                 Rule::lambda => {
-                    let mut pairs = primary.into_inner();
+                    let span = p.as_span().into();
+                    let mut pairs = p.into_inner();
                     let idents = pairs
                         .next()
                         .unwrap()
@@ -163,103 +166,108 @@ impl EddParser {
                     let ret = Self::parse_type(pairs.next().unwrap().into_inner());
                     let body = Self::parse_expr(get_only_one(pairs).into_inner());
 
-                    Expr::Lambda(idents, ret, Box::new(body))
+                    Expr::Lambda(span, idents, ret, Box::new(body))
                 }
                 Rule::call => {
-                    let mut pairs = primary.into_inner();
+                    let span = p.as_span().into();
+                    let mut pairs = p.into_inner();
                     let name = pairs.next().unwrap().as_str().into();
                     let exprs = get_only_one(pairs)
                         .into_inner()
                         .map(|p| Self::parse_expr(p.into_inner()))
                         .collect();
 
-                    Expr::Call(name, exprs)
+                    Expr::Call(span, name, exprs)
                 }
                 Rule::block => {
-                    let stmnts = primary
+                    let span = p.as_span().into();
+                    let stmnts = p
                         .into_inner()
                         .map(|p| Self::parse_statement(p.into_inner()))
                         .collect();
 
-                    Expr::Block(stmnts)
+                    Expr::Block(span, stmnts)
                 }
                 r => unreachable!("{r:?}"),
             })
             .map_infix(|lhs, op, rhs| match op.as_rule() {
-                Rule::add => Expr::Add(Box::new(lhs), Box::new(rhs)),
-                Rule::subtract => Expr::Sub(Box::new(lhs), Box::new(rhs)),
-                Rule::multiply => Expr::Mul(Box::new(lhs), Box::new(rhs)),
-                Rule::divide => Expr::Div(Box::new(lhs), Box::new(rhs)),
-                Rule::eq => Expr::Eq(Box::new(lhs), Box::new(rhs)),
-                Rule::neq => Expr::Neq(Box::new(lhs), Box::new(rhs)),
-                Rule::lt => Expr::Lt(Box::new(lhs), Box::new(rhs)),
-                Rule::lte => Expr::Lte(Box::new(lhs), Box::new(rhs)),
-                Rule::gt => Expr::Gt(Box::new(lhs), Box::new(rhs)),
-                Rule::gte => Expr::Gte(Box::new(lhs), Box::new(rhs)),
-                Rule::concat => Expr::Concat(Box::new(lhs), Box::new(rhs)),
-                Rule::cast_as => Expr::Cast(Box::new(lhs), todo!("{}", rhs)),
+                Rule::add => Expr::Add(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::subtract => Expr::Sub(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::multiply => Expr::Mul(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::divide => Expr::Div(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::eq => Expr::Eq(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::neq => Expr::Neq(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::lt => Expr::Lt(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::lte => Expr::Lte(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::gt => Expr::Gt(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::gte => Expr::Gte(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::concat => Expr::Concat(op.as_span().into(), Box::new(lhs), Box::new(rhs)),
+                Rule::cast_as => Expr::Cast(op.as_span().into(), Box::new(lhs), todo!("{}", rhs)),
                 _ => unreachable!(),
             })
             .map_prefix(|op, rhs| match op.as_rule() {
-                Rule::not => Expr::Not(Box::new(rhs)),
-                Rule::r#ref => Expr::Ref(Box::new(rhs)),
-                Rule::neg => Expr::Neg(Box::new(rhs)),
-                Rule::deref => Expr::Deref(Box::new(rhs)),
+                Rule::not => Expr::Not(op.as_span().into(), Box::new(rhs)),
+                Rule::r#ref => Expr::Ref(op.as_span().into(), Box::new(rhs)),
+                Rule::neg => Expr::Neg(op.as_span().into(), Box::new(rhs)),
+                Rule::deref => Expr::Deref(op.as_span().into(), Box::new(rhs)),
                 _ => unreachable!(),
             })
             .parse(expr)
     }
     fn parse_pl_expr(pairs_t: Pairs<Rule>) -> PlaceExpr {
         let pl_expr = get_only_one(pairs_t);
+        let span = pl_expr.as_span().into();
         match pl_expr.as_rule() {
-            Rule::ident => PlaceExpr::Ident(pl_expr.as_str().into()),
-            Rule::deref_expr => PlaceExpr::Deref(Self::parse_expr(pl_expr.into_inner())),
+            Rule::ident => PlaceExpr::Ident(span, pl_expr.as_str().into()),
+            Rule::deref_expr => PlaceExpr::Deref(span, Self::parse_expr(pl_expr.into_inner())),
             Rule::array_index => {
                 let mut pairs = pl_expr.into_inner();
                 let e = Pairs::single(pairs.next().unwrap());
                 let i = Pairs::single(pairs.next().unwrap());
 
-                PlaceExpr::Index(Self::parse_expr(e), Self::parse_expr(i))
+                PlaceExpr::Index(span, Self::parse_expr(e), Self::parse_expr(i))
             }
             Rule::field_access => {
                 let mut pairs = pl_expr.into_inner();
                 let e = Pairs::single(pairs.next().unwrap());
                 let i = Pairs::single(pairs.next().unwrap());
 
-                PlaceExpr::FieldAccess(Self::parse_expr(e), i.as_str().into())
+                PlaceExpr::FieldAccess(span, Self::parse_expr(e), i.as_str().into())
             }
             _ => unreachable!(),
         }
     }
     fn parse_statement(mut stmnt: Pairs<Rule>) -> Statement {
         let Some(stmnt) = stmnt.next() else {
-            return Statement::Express(Expr::Const(Literal::Unit));
+            // TODO: FIXME
+            return Statement::Express(Default::default(), Expr::Const(Default::default(), Literal::Unit));
         };
+        let span = stmnt.as_span().into();
         match stmnt.as_rule() {
-            Rule::expr => Statement::Express(Self::parse_expr(stmnt.into_inner())),
+            Rule::expr => Statement::Express(span, Self::parse_expr(stmnt.into_inner())),
             Rule::let_decl => {
                 let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
                 let t_annotation = Self::parse_type(binding.next().unwrap().into_inner());
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
-                Statement::Let(id, t_annotation, expr)
+                Statement::Let(span, id, t_annotation, expr)
             }
             Rule::var_decl => {
                 let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
                 let t_annotation = Self::parse_type(binding.next().unwrap().into_inner());
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
-                Statement::Var(id, t_annotation, expr)
+                Statement::Var(span, id, t_annotation, expr)
             }
             Rule::rebind => {
                 let mut binding = stmnt.into_inner();
                 let id = Self::parse_pl_expr(binding.next().unwrap().into_inner());
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
-                Statement::Rebind(id, expr)
+                Statement::Rebind(span, id, expr)
             }
             Rule::r#return => {
                 let expr = get_only_one(stmnt.into_inner());
-                Statement::Express(Self::parse_expr(expr.into_inner()))
+                Statement::Express(span, Self::parse_expr(expr.into_inner()))
             }
             Rule::fn_decl => {
                 let mut decl = stmnt.into_inner();
@@ -271,7 +279,7 @@ impl EddParser {
                     .collect();
                 let ret = Self::parse_type(decl.next().unwrap().into_inner()).unwrap();
                 let body = Self::parse_expr(Pairs::single(decl.next().unwrap()));
-                Statement::Let(id, None, Expr::Lambda(typed_idents, Some(ret), Box::new(body)))
+                Statement::Let(span, id, None, Expr::Lambda(span, typed_idents, Some(ret), Box::new(body)))
             }
             e => unreachable!("{e:?}"),
         }

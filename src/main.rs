@@ -8,19 +8,20 @@ use edd::{
     }
 };
 
-use std::{env::args_os, fs::File, io::Read};
+use std::{env::args_os, fs::File, io::Read, path::Path};
 
 fn main() {
     let path = args_os().nth(1).expect("input file");
+    let path = Path::new(&path);
 
     let prgrm = {
-        let mut file = File::open(path).unwrap();
+        let mut file = File::open(&path).unwrap();
         let mut s = String::new();
         file.read_to_string(&mut s).unwrap();
         match parse(&s) {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("Syntax error\n{e}");
+                eprintln!("Syntax error\n{}:{e}", path.display());
                 return;
             }
         }
@@ -40,7 +41,7 @@ fn main() {
     let (_ret, prgrm) = match check_program(prgrm, &stab) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Type error\n{e}");
+            eprintln!("Type error\n{}:{e}", path.display());
             return;
         }
     };
@@ -53,7 +54,7 @@ fn main() {
     match run(prgrm) {
         Ok(Value::Unit) => (),
         Ok(v) => println!("Returned {v}"),
-        Err(e) => eprintln!("Runtime error: {e}"),
+        Err(e) => eprintln!("Runtime error:\n{}:{e}", path.display()),
     }
 }
 

@@ -3,14 +3,16 @@ use std::rc::Rc;
 
 use crate::ttype::Type;
 
+use super::span::Span;
+
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Express(Expr),
-    Let(Rc<str>, Option<Type>, Expr),
-    Var(Rc<str>, Option<Type>, Expr),
-    Rebind(PlaceExpr, Expr),
+    Express(Span, Expr),
+    Let(Span, Rc<str>, Option<Type>, Expr),
+    Var(Span, Rc<str>, Option<Type>, Expr),
+    Rebind(Span, PlaceExpr, Expr),
 
-    Return(Expr),
+    Return(Span, Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,54 +39,54 @@ impl Display for Literal {
 
 #[derive(Debug, Clone)]
 pub enum PlaceExpr {
-    Ident(Rc<str>),
-    Deref(Expr),
-    Index(Expr, Expr),
-    FieldAccess(Expr, Rc<str>),
+    Ident(Span, Rc<str>),
+    Deref(Span, Expr),
+    Index(Span, Expr, Expr),
+    FieldAccess(Span, Expr, Rc<str>),
 }
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Ident(Rc<str>),
-    Const(Literal),
-    Add(Box<Self>, Box<Self>),
-    Sub(Box<Self>, Box<Self>),
-    Mul(Box<Self>, Box<Self>),
-    Div(Box<Self>, Box<Self>),
-    Concat(Box<Self>, Box<Self>),
+    Ident(Span, Rc<str>),
+    Const(Span, Literal),
+    Add(Span, Box<Self>, Box<Self>),
+    Sub(Span, Box<Self>, Box<Self>),
+    Mul(Span, Box<Self>, Box<Self>),
+    Div(Span, Box<Self>, Box<Self>),
+    Concat(Span, Box<Self>, Box<Self>),
 
-    Not(Box<Self>),
-    Neg(Box<Self>),
+    Not(Span, Box<Self>),
+    Neg(Span, Box<Self>),
 
-    Ref(Box<Self>),
-    Deref(Box<Self>),
-    Array(Box<[Self]>),
-    StructConstructor(Box<[(Option<Box<str>>, Expr)]>),
-    Cast(Box<Self>, Type),
+    Ref(Span, Box<Self>),
+    Deref(Span, Box<Self>),
+    Array(Span, Box<[Self]>),
+    StructConstructor(Span, Box<[(Option<Box<str>>, Expr)]>),
+    Cast(Span, Box<Self>, Type),
 
-    Block(Box<[Statement]>),
-    Lambda(Box<[(Rc<str>, Option<Type>)]>, Option<Type>, Box<Self>),
-    Call(Rc<str>, Box<[Self]>),
+    Block(Span, Box<[Statement]>),
+    Lambda(Span, Box<[(Rc<str>, Option<Type>)]>, Option<Type>, Box<Self>),
+    Call(Span, Rc<str>, Box<[Self]>),
 
-    If(Box<Self>, Box<Self>, Box<Self>),
-    Eq(Box<Self>, Box<Self>),
-    Neq(Box<Self>, Box<Self>),
-    Lt(Box<Self>, Box<Self>),
-    Lte(Box<Self>, Box<Self>),
-    Gt(Box<Self>, Box<Self>),
-    Gte(Box<Self>, Box<Self>),
+    If(Span, Box<Self>, Box<Self>, Box<Self>),
+    Eq(Span, Box<Self>, Box<Self>),
+    Neq(Span, Box<Self>, Box<Self>),
+    Lt(Span, Box<Self>, Box<Self>),
+    Lte(Span, Box<Self>, Box<Self>),
+    Gt(Span, Box<Self>, Box<Self>),
+    Gte(Span, Box<Self>, Box<Self>),
 }
 
 impl Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expr::Ident(i) => write!(f, "{i}"),
-            Expr::Const(v) => write!(f, "{v}"),
-            Expr::Add(a, b) => write!(f, "({a} + {b})"),
-            Expr::Sub(a, b) => write!(f, "({a} - {b})"),
-            Expr::Mul(a, b) => write!(f, "({a} * {b})"),
-            Expr::Div(a, b) => write!(f, "({a} / {b})"),
-            Expr::Concat(a, b) => write!(f, "({a} ++ {b}"),
-            Expr::Lambda(args, ret, body) => {
+            Expr::Ident(_, i) => write!(f, "{i}"),
+            Expr::Const(_, v) => write!(f, "{v}"),
+            Expr::Add(_, a, b) => write!(f, "({a} + {b})"),
+            Expr::Sub(_, a, b) => write!(f, "({a} - {b})"),
+            Expr::Mul(_, a, b) => write!(f, "({a} * {b})"),
+            Expr::Div(_, a, b) => write!(f, "({a} / {b})"),
+            Expr::Concat(_, a, b) => write!(f, "({a} ++ {b}"),
+            Expr::Lambda(_, args, ret, body) => {
                 write!(f, "fn(")?;
                 let mut first = true;
                 for (arg, t) in args.iter() {
@@ -103,7 +105,7 @@ impl Display for Expr {
                 }
                 write!(f, " ({body})")
             }
-            Expr::Call(f_name, args) => {
+            Expr::Call(_, f_name, args) => {
                 write!(f, "{f_name}(")?;
                 let mut first = true;
                 for arg in args.iter() {
@@ -115,21 +117,21 @@ impl Display for Expr {
                 }
                 write!(f, ")")
             }
-            Expr::If(cond, if_t, if_f) => write!(f, "(if {cond} then {if_t} else {if_f})"),
-            Expr::Eq(a, b) => write!(f, "({a} == {b})"),
-            Expr::Neq(a, b) => write!(f, "({a} != {b})"),
-            Expr::Lt(a, b) => write!(f, "({a} < {b})"),
-            Expr::Lte(a, b) => write!(f, "({a} <= {b})"),
-            Expr::Gt(a, b) => write!(f, "({a} > {b})"),
-            Expr::Gte(a, b) => write!(f, "({a} >= {b})"),
-            Expr::Not(a) => write!(f, "!{a}"),
-            Expr::Ref(a) => write!(f, "&{a}"),
-            Expr::Neg(a) => write!(f, "-{a}"),
-            Expr::Deref(a) => write!(f, "*{a}"),
-            Expr::Array(a) => f.debug_list()
+            Expr::If(_, cond, if_t, if_f) => write!(f, "(if {cond} then {if_t} else {if_f})"),
+            Expr::Eq(_, a, b) => write!(f, "({a} == {b})"),
+            Expr::Neq(_, a, b) => write!(f, "({a} != {b})"),
+            Expr::Lt(_, a, b) => write!(f, "({a} < {b})"),
+            Expr::Lte(_, a, b) => write!(f, "({a} <= {b})"),
+            Expr::Gt(_, a, b) => write!(f, "({a} > {b})"),
+            Expr::Gte(_, a, b) => write!(f, "({a} >= {b})"),
+            Expr::Not(_, a) => write!(f, "!{a}"),
+            Expr::Ref(_, a) => write!(f, "&{a}"),
+            Expr::Neg(_, a) => write!(f, "-{a}"),
+            Expr::Deref(_, a) => write!(f, "*{a}"),
+            Expr::Array(_, a) => f.debug_list()
                 .entries(&**a)
                 .finish(),
-            Expr::StructConstructor(strct) => {
+            Expr::StructConstructor(_, strct) => {
                 write!(f, "{{ ")?;
                 for (name, val) in strct.iter() {
                     if let Some(name) = name {
@@ -139,8 +141,8 @@ impl Display for Expr {
                 }
                 write!(f, "}}")
             }
-            Expr::Cast(val, t) => write!(f, "({val} as {t}"),
-            Expr::Block(stmnts) => {
+            Expr::Cast(_, val, t) => write!(f, "({val} as {t}"),
+            Expr::Block(_, stmnts) => {
                 write!(f, "{{ ")?;
                 let mut first = true;
                 for s in stmnts.iter() {
@@ -159,10 +161,10 @@ impl Display for Expr {
 impl Display for PlaceExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Ident(i) => write!(f, "{i}"),
-            Self::Deref(a) => write!(f, "*{a}"),
-            Self::Index(e, i) => write!(f, "{e}[{i}]"),
-            Self::FieldAccess(e, i) => write!(f, "{e}.{i}"),
+            Self::Ident(_, i) => write!(f, "{i}"),
+            Self::Deref(_, a) => write!(f, "*{a}"),
+            Self::Index(_, e, i) => write!(f, "{e}[{i}]"),
+            Self::FieldAccess(_, e, i) => write!(f, "{e}.{i}"),
         }
     }
 }
@@ -170,23 +172,23 @@ impl Display for PlaceExpr {
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Statement::Express(e) => write!(f, "{e}"),
-            Statement::Let(n, t, e) => {
+            Statement::Express(_, e) => write!(f, "{e}"),
+            Statement::Let(_, n, t, e) => {
                 write!(f, "let {n}")?;
                 if let Some(t) = t {
                     write!(f, ": {t}")?;
                 }
                 write!(f, " = {e}")
             }
-            Statement::Var(n, t, e) => {
+            Statement::Var(_, n, t, e) => {
                 write!(f, "var {n}")?;
                 if let Some(t) = t {
                     write!(f, ": {t}")?;
                 }
                 write!(f, " = {e}")
             }
-            Statement::Rebind(n, e) => write!(f, "{n} = {e}"),
-            Statement::Return(e) => write!(f, "ret {e}"),
+            Statement::Rebind(_, n, e) => write!(f, "{n} = {e}"),
+            Statement::Return(_, e) => write!(f, "ret {e}"),
         }
     }
 }
