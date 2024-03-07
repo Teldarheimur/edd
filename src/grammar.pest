@@ -1,4 +1,3 @@
-// TODO: don't parse primitive types, true, false, ... as strings, define rules for them instead
 // TODO: clean this up
 
 num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
@@ -19,9 +18,19 @@ type = {
     grouped
 }
     primitive = {
-        "bool" | "byte" | "u8" | "i8" | "u16" |
-        "i16" | "u32" | "i32" | "float" | "unit"
+        bool_t | byte_t | u8_t | i8_t | u16_t |
+        i16_t | u32_t | i32_t | float_t | unit_t
     }
+        bool_t = { "bool" }
+        byte_t = { "byte" }
+        u8_t = { "u8" }
+        i8_t = { "i8" }
+        u16_t = { "u16" }
+        i16_t = { "i16" }
+        u32_t = { "u32" }
+        i32_t = { "i32" }
+        float_t = { "float" }
+        unit_t = { "unit" }
     opt = { "?" ~ type }
     ptr = { "*" ~ type }
     slice = { "[]" ~ type }

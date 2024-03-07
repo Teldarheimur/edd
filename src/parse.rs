@@ -98,17 +98,17 @@ impl EddParser {
         assert_eq!(t.as_rule(), Rule::r#type);
         let t = get_only_one(t.into_inner());
         Some(match t.as_rule() {
-            Rule::primitive => match t.as_str() {
-                "bool" => Type::Bool,
-                "byte" => Type::Byte,
-                "u8" => Type::U8,
-                "i8" => Type::I8,
-                "i16" => Type::I16,
-                "u16" => Type::U16,
-                "i32" => Type::I32,
-                "u32" => Type::U32,
-                "float" => Type::I8,
-                "()" => Type::Unit,
+            Rule::primitive => match get_only_one(t.into_inner()).as_rule() {
+                Rule::bool_t => Type::Bool,
+                Rule::byte_t => Type::Byte,
+                Rule::u8_t => Type::U8,
+                Rule::i8_t => Type::I8,
+                Rule::i16_t => Type::I16,
+                Rule::u16_t => Type::U16,
+                Rule::i32_t => Type::I32,
+                Rule::u32_t => Type::U32,
+                Rule::float_t => Type::I8,
+                Rule::unit_t => Type::Unit,
                 _ => unreachable!(),
             }
             Rule::opt => Type::Option(Box::new(Self::parse_type(t.into_inner()).unwrap())),
