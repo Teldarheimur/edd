@@ -1,10 +1,10 @@
-let reffer: fn(i32) *i32 = fn(x_) {
+fn reffer(x_: i32) *i32 {
     // This will be undefined behaviour in the future, but RN it tests pointers p well
     var x = x_;
     &x
 };
 
-let hest: *i32 = reffer(9);
+let hest = reffer(9);
 
 print(*hest);
 *hest = 42;

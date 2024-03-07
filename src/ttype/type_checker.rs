@@ -3,7 +3,7 @@ use collect_result::CollectResult;
 use self::concrete::concretise_statements;
 
 use super::{
-    ast::{Expr, PlaceExpr, Statement}, stab::SymbolTable, typevar::TypeVar, Result, unify_types, Type, TypeError
+    ast::{Expr, PlaceExpr, Statement}, stab::SymbolTable, Result, unify_types, Type, TypeError
 };
 use crate::parse::ast::{
     PlaceExpr as UntypedPle, Expr as UntypedExpr, Literal as UntypedLiteral, Statement as UntypedStatement,
@@ -295,10 +295,13 @@ fn check_expr(expr: &UntypedExpr, state: &mut SymbolTable) -> Result<(Type, Expr
                 Expr::Call(name.clone(), args.into_boxed_slice()),
             ))
         }
-        UntypedExpr::Lambda(args, body) => {
+        UntypedExpr::Lambda(args, ret, body) => {
             let args: Box<[_]> = args
                 .iter()
-                .map(|e| (e.clone(), Type::Unknown(TypeVar::any_type())))
+                .map(|(n, t)| (
+                    n.clone(),
+                    t.clone().unwrap_or_else(Type::any),
+                ))
                 .collect();
             let targs = args.iter().map(|(_, t)| t.clone()).collect();
 
@@ -308,10 +311,11 @@ fn check_expr(expr: &UntypedExpr, state: &mut SymbolTable) -> Result<(Type, Expr
             }
 
             let (bt, be) = check_expr(body, &mut stab)?;
+            let rt = unify_types(ret.clone().unwrap_or_else(Type::any), bt)?;
 
             Ok((
-                Type::Function(targs, Box::new(bt)),
-                Expr::Lambda(args, Box::new(be)),
+                Type::Function(targs, Box::new(rt.clone())),
+                Expr::Lambda(args, rt, Box::new(be)),
             ))
         }
         UntypedExpr::Block(stmnts) => {

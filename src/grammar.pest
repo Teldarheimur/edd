@@ -1,4 +1,5 @@
 // TODO: don't parse primitive types, true, false, ... as strings, define rules for them instead
+// TODO: clean this up
 
 num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
 int = { ("+" | "-")? ~ ASCII_DIGIT+ }
@@ -19,7 +20,7 @@ type = {
 }
     primitive = {
         "bool" | "byte" | "u8" | "i8" | "u16" |
-        "i16" | "u32" | "i32" | "float" | "()"
+        "i16" | "u32" | "i32" | "float" | "unit"
     }
     opt = { "?" ~ type }
     ptr = { "*" ~ type }
@@ -31,9 +32,11 @@ type = {
 
 types = { (type ~ ("," ~ type)*)? ~ ","? }
 
-type_annotation = { (":" ~ type)? }
+type_annot_opt = { (":" ~ type)? }
+type_annot = { ":" ~ type }
 return_type = { type? }
-typed_ident = _{ ident ~ ":" ~ type }
+typed_ident = { ident ~ type_annot }
+mtyped_ident = { ident ~ type_annot_opt }
 
 operation = _{
     concat | add | subtract | multiply | divide |
@@ -63,11 +66,11 @@ if = {
 }
 
 typed_idents = { (typed_ident ~ ("," ~ typed_ident)*)? ~ ","? }
-idents = { (ident ~ ("," ~ ident)*)? ~ ","? }
+mtyped_idents = { (mtyped_ident ~ ("," ~ mtyped_ident)*)? ~ ","? }
 exprs = { (expr ~ ("," ~ expr)*)? ~ ","? }
 
 lambda = {
-    "fn" ~ "(" ~ idents ~ ")" ~ expr
+    "fn" ~ "(" ~ mtyped_idents ~ ")" ~ return_type ~ expr
 }
 call = {
     ident ~ "(" ~ exprs ~ ")"
@@ -80,12 +83,12 @@ term = _{ if | lambda | literal | call | ident | unop ~ expr | "(" ~ expr ~ ")" 
 binding = _{
     let_decl | fn_decl | var_decl | rebind
 }
-    let_decl = { "let" ~ ident ~ type_annotation ~ "=" ~ expr }
+    let_decl = { "let" ~ ident ~ type_annot_opt ~ "=" ~ expr }
     fn_decl = {
         "fn" ~ ident ~ "(" ~ typed_idents ~ ")" ~ return_type
         ~ block
     }
-    var_decl = { "var" ~ ident ~ type_annotation ~ "=" ~ expr }
+    var_decl = { "var" ~ ident ~ type_annot_opt ~ "=" ~ expr }
     rebind = { pl_expr ~ "=" ~ expr }
 return = { "ret" ~ expr }
 pl_expr = { ident |

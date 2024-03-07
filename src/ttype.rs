@@ -41,6 +41,7 @@ pub enum Type {
     Array(Box<Self>, u16),
 }
 impl Type {
+    #[inline(always)]
     fn any() -> Type {
         Type::Unknown(TypeVar::any_type())
     }

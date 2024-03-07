@@ -55,7 +55,7 @@ pub enum Expr {
     Deref(Box<Self>),
 
     Block(Box<[Statement]>),
-    Lambda(Box<[(Rc<str>, Type)]>, Box<Self>),
+    Lambda(Box<[(Rc<str>, Type)]>, Type, Box<Self>),
     Call(Rc<str>, Box<[Self]>),
 
     If(Box<Self>, Box<Self>, Box<Self>),
@@ -232,7 +232,7 @@ impl Expr {
                 }
             }
 
-            Expr::Lambda(_f, _args) => todo!(),
+            Expr::Lambda(_f, _ret, _args) => todo!(),
             Expr::Call(_f, _args) => todo!(),
 
             Expr::If(cond, if_true, if_false) => {

@@ -193,7 +193,7 @@ impl Expr {
                 }
                 Ok(last_expr)
             }
-            Expr::Lambda(args, body) => Ok(Value::Function {
+            Expr::Lambda(args, _, body) => Ok(Value::Function {
                 body: body.eval_const(st, &args),
                 args: args.iter().map(|(_, t)| t.clone()).collect(),
             }),

@@ -47,7 +47,7 @@ impl Display for Expr {
             Expr::Mul(a, b) => write!(f, "({a} * {b})"),
             Expr::Div(a, b) => write!(f, "({a} / {b})"),
             Expr::Concat(a, b) => write!(f, "({a} ++ {b}"),
-            Expr::Lambda(args, body) => {
+            Expr::Lambda(args, ret, body) => {
                 write!(f, "fn(")?;
                 let mut first = true;
                 for (arg, t) in args.iter() {
@@ -57,7 +57,7 @@ impl Display for Expr {
                     first = false;
                     write!(f, "{arg}: {t}")?;
                 }
-                write!(f, ") ({body})")
+                write!(f, ") {ret} ({body})")
             }
             Expr::Call(f_name, args) => {
                 write!(f, "{f_name}(")?;

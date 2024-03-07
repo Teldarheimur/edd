@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt::Display;
+use std::rc::Rc;
 use std::result::Result as StdResult;
 
 use lazy_static::lazy_static;
@@ -133,6 +134,11 @@ impl EddParser {
             _ => unreachable!(),
         })
     }
+    fn parse_typed_ident(mut pairs: Pairs<Rule>) -> (Rc<str>, Option<Type>) {
+        let ident = pairs.next().unwrap().as_str();
+        let annot = get_only_one(pairs);
+        (ident.into(), Self::parse_type(annot.into_inner()))
+    }
     fn parse_expr(expr: Pairs<Rule>) -> Expr {
         EXPR_PARSER
             .map_primary(|primary| match primary.as_rule() {
@@ -152,11 +158,12 @@ impl EddParser {
                         .next()
                         .unwrap()
                         .into_inner()
-                        .map(|p| p.as_str().into())
+                        .map(|p| Self::parse_typed_ident(p.into_inner()))
                         .collect();
+                    let ret = Self::parse_type(pairs.next().unwrap().into_inner());
                     let body = Self::parse_expr(get_only_one(pairs).into_inner());
 
-                    Expr::Lambda(idents, Box::new(body))
+                    Expr::Lambda(idents, ret, Box::new(body))
                 }
                 Rule::call => {
                     let mut pairs = primary.into_inner();
@@ -253,6 +260,18 @@ impl EddParser {
             Rule::r#return => {
                 let expr = get_only_one(stmnt.into_inner());
                 Statement::Express(Self::parse_expr(expr.into_inner()))
+            }
+            Rule::fn_decl => {
+                let mut decl = stmnt.into_inner();
+                let id = decl.next().unwrap().as_str().into();
+                let typed_idents = decl.next()
+                    .unwrap()
+                    .into_inner()
+                    .map(|ps| Self::parse_typed_ident(ps.into_inner()))
+                    .collect();
+                let ret = Self::parse_type(decl.next().unwrap().into_inner()).unwrap();
+                let body = Self::parse_expr(Pairs::single(decl.next().unwrap()));
+                Statement::Let(id, None, Expr::Lambda(typed_idents, Some(ret), Box::new(body)))
             }
             e => unreachable!("{e:?}"),
         }

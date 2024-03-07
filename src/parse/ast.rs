@@ -62,7 +62,7 @@ pub enum Expr {
     Cast(Box<Self>, Type),
 
     Block(Box<[Statement]>),
-    Lambda(Box<[Rc<str>]>, Box<Self>),
+    Lambda(Box<[(Rc<str>, Option<Type>)]>, Option<Type>, Box<Self>),
     Call(Rc<str>, Box<[Self]>),
 
     If(Box<Self>, Box<Self>, Box<Self>),
@@ -84,17 +84,24 @@ impl Display for Expr {
             Expr::Mul(a, b) => write!(f, "({a} * {b})"),
             Expr::Div(a, b) => write!(f, "({a} / {b})"),
             Expr::Concat(a, b) => write!(f, "({a} ++ {b}"),
-            Expr::Lambda(args, body) => {
+            Expr::Lambda(args, ret, body) => {
                 write!(f, "fn(")?;
                 let mut first = true;
-                for arg in args.iter() {
+                for (arg, t) in args.iter() {
                     if !first {
                         write!(f, ", ")?;
                     }
                     first = false;
                     write!(f, "{arg}")?;
+                    if let Some(t) = t {
+                        write!(f, ": {t}")?;
+                    }
                 }
-                write!(f, ") ({body})")
+                write!(f, ")")?;
+                if let Some(ret) = ret {
+                    write!(f, " {ret}")?;
+                }
+                write!(f, " ({body})")
             }
             Expr::Call(f_name, args) => {
                 write!(f, "{f_name}(")?;

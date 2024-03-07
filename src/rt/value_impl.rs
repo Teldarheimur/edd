@@ -4,7 +4,7 @@ use std::{
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
-use crate::ttype::ast::Expr;
+use crate::ttype::{ast::Expr, Type};
 
 use super::{RuntimeError, Value, Variable};
 
@@ -26,6 +26,7 @@ impl From<Value> for Expr {
             Value::Function { args, body } => Expr::Lambda(
                 args.into_vec().into_iter().enumerate()
                     .map(|(n, t)| (format!("${n}").into(), t)).collect(),
+                Type::Opaque,
                 Box::new(body),
             ),
             Value::Null => Expr::ConstNull,

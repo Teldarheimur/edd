@@ -97,10 +97,11 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
         Expr::Not(e) |
         Expr::Neg(e) |
         Expr::Deref(e) => concretise_expr(e),
-        Expr::Lambda(args, e) => {
+        Expr::Lambda(args, ret, e) => {
             for (_, at) in args.iter_mut() {
                 concretise_type(at)?;
             }
+            concretise_type(ret)?;
             concretise_expr(e)
         }
         Expr::Block(stmnts) => concretise_statements(stmnts),
