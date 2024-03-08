@@ -108,6 +108,7 @@ pub enum TypeErrorType {
     NotPtr(Type),
     DisjointContraints(HashSet<Type>, HashSet<Type>),
     NonConcreteType,
+    DuplicateGlobalDefinition(Box<str>),
 }
 
 impl TypeErrorType {
@@ -135,6 +136,7 @@ impl Display for TypeError {
             NotPtr(t) => write!(f, "type {t} is not a pointer"),
             DisjointContraints(s1, s2) => write!(f, "incompatible type constraints: {s1:?} {s2:?}"),
             NonConcreteType => write!(f, "could not infer concrete type"),
+            DuplicateGlobalDefinition(name) => write!(f, "duplicate global definition of {name}"),
         }
     }
 }

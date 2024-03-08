@@ -13,8 +13,9 @@ use pest::Parser;
 pub mod ast;
 pub mod span;
 
-use self::ast::{Expr, Literal, PlaceExpr, Statement};
+use self::ast::{Expr, Literal, PlaceExpr, Program, Statement};
 use crate::get_only_one;
+use crate::parse::ast::Decl;
 use crate::ttype::Type;
 
 lazy_static! {
@@ -37,7 +38,7 @@ lazy_static! {
     };
 }
 
-pub fn parse(line: &str) -> Result<Box<[Statement]>> {
+pub fn parse(line: &str) -> Result<Program> {
     let pairs = EddParser::parse(Rule::program, line)?;
 
     Ok(EddParser::parse_program(pairs))
@@ -245,21 +246,21 @@ impl EddParser {
         let span = stmnt.as_span().into();
         match stmnt.as_rule() {
             Rule::expr => Statement::Express(span, Self::parse_expr(stmnt.into_inner())),
-            Rule::let_decl => {
+            Rule::let_bind => {
                 let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
                 let t_annotation = Self::parse_type(binding.next().unwrap().into_inner());
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
                 Statement::Let(span, id, t_annotation, expr)
             }
-            Rule::var_decl => {
+            Rule::var_bind => {
                 let mut binding = stmnt.into_inner();
                 let id = binding.next().unwrap().as_str().into();
                 let t_annotation = Self::parse_type(binding.next().unwrap().into_inner());
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
                 Statement::Var(span, id, t_annotation, expr)
             }
-            Rule::rebind => {
+            Rule::assign => {
                 let mut binding = stmnt.into_inner();
                 let id = Self::parse_pl_expr(binding.next().unwrap().into_inner());
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner());
@@ -267,32 +268,53 @@ impl EddParser {
             }
             Rule::r#return => {
                 let expr = get_only_one(stmnt.into_inner());
-                Statement::Express(span, Self::parse_expr(expr.into_inner()))
-            }
-            Rule::fn_decl => {
-                let mut decl = stmnt.into_inner();
-                let id = decl.next().unwrap().as_str().into();
-                let typed_idents = decl.next()
-                    .unwrap()
-                    .into_inner()
-                    .map(|ps| Self::parse_typed_ident(ps.into_inner()))
-                    .collect();
-                let ret = Self::parse_type(decl.next().unwrap().into_inner()).unwrap();
-                let body = Self::parse_expr(Pairs::single(decl.next().unwrap()));
-                Statement::Let(span, id, None, Expr::Lambda(span, typed_idents, Some(ret), Box::new(body)))
+                Statement::Return(span, Self::parse_expr(expr.into_inner()))
             }
             e => unreachable!("{e:?}"),
         }
     }
-    fn parse_program(mut program: Pairs<Rule>) -> Box<[Statement]> {
-        let stmnts = program.next().unwrap()
-            .into_inner()
-            .map(|p| Self::parse_statement(p.into_inner()))
-            .collect();
+    fn parse_program(mut ps: Pairs<Rule>) -> Program {
+        let mut decls = Vec::new();
+        loop {
+            let p = ps.next().unwrap();
+            match p.as_rule() {
+                Rule::static_decl => {
+                    let span = p.as_span().into();
+                    let mut ps = p.into_inner();
+                    let (n, t) = Self::parse_typed_ident(ps.next().unwrap().into_inner());
+                    let expr = Self::parse_expr(get_only_one(ps).into_inner());
 
-        assert_eq!(program.next().unwrap().as_rule(), Rule::EOI);
+                    decls.push((n, Decl::Static(span, Box::new((t.unwrap(), expr)))));
+                }
+                Rule::const_decl => {
+                    let span = p.as_span().into();
+                    let mut ps: Pairs<'_, Rule> = p.into_inner();
+                    let (n, t) = Self::parse_typed_ident(ps.next().unwrap().into_inner());
+                    let expr = Self::parse_expr(get_only_one(ps).into_inner());
 
-        stmnts
+                    decls.push((n, Decl::Const(span, Box::new((t.unwrap(), expr)))));
+                }
+                Rule::fn_decl => {
+                    let span = p.as_span().into();
+                    let mut ps = p.into_inner();
+                    let n = ps.next().unwrap().as_str().into();
+                    let typed_idents = ps.next()
+                        .unwrap()
+                        .into_inner()
+                        .map(|ps| Self::parse_typed_ident(ps.into_inner()))
+                        .map(|(n, t)| (n, t.unwrap()))
+                        .collect();
+                    let ret = Self::parse_type(ps.next().unwrap().into_inner()).unwrap();
+                    let body = Self::parse_expr(Pairs::single(ps.next().unwrap()));
+
+                    decls.push((n, Decl::Fn(span, typed_idents, Box::new((ret, body)))));
+                }
+                Rule::EOI => break,
+                _ => unreachable!(),
+            }
+        }
+
+        Program(decls)
     }
 }
 

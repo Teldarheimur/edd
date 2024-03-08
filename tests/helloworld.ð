@@ -1,2 +1,4 @@
-print("\0Hello," ++ "\t" ++ "World!\0");
+fn main() unit {
+    print("\0Hello," ++ "\t" ++ "World!\0");
+}
 

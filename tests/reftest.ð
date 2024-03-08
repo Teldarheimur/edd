@@ -1,11 +1,18 @@
+const kage: i8 = 10;
+static mjav: i8 = 15;
+
 fn reffer(x_: i32) *i32 {
     // This will be undefined behaviour in the future, but RN it tests pointers p well
     var x = x_;
     &x
-};
+}
 
-let hest = reffer(9);
+fn main() unit {
+    mjav = kage + mjav;
+    let hest = reffer(9);
+    print(mjav - 4);
 
-print(*hest);
-*hest = 42;
-print(*hest);
+    print(*hest);
+    *hest = 42;
+    print(*hest);
+}

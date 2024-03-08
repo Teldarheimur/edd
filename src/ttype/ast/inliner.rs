@@ -41,13 +41,13 @@ impl InnerStab {
         ret
     }
     fn lookup(&mut self, name: &str) -> Expr {
-        let entry = self.table.get_mut(name).unwrap();
+        let entry = self.table.get_mut(name).expect(name);
         entry.dead = false;
 
         entry.expr.clone()
     }
     fn access(&mut self, name: &str) {
-        let entry = self.table.get_mut(name).unwrap();
+        let entry = self.table.get_mut(name).expect(name);
         entry.dead = false;
     }
     fn add_var(&mut self, name: Rc<str>, expr: Expr) {
@@ -59,7 +59,7 @@ impl InnerStab {
 }
 
 impl Expr {
-        pub fn eval_const(mut self, st: &SymbolTable, args: &[(Rc<str>, Type)]) -> Self {
+    pub fn eval_const(mut self, st: &SymbolTable, args: &[(Rc<str>, Type)]) -> Self {
         let mut last = self.clone();
         let mut inner_stab = InnerStab::default();
         for _ in 0..MAX_RECUR {
@@ -76,6 +76,7 @@ impl Expr {
     fn remove_dead_bindings(self, _stab: InnerStab) -> Self {
         self
     }
+    // TODO: fix bug that copies expressions that should not be copied (e.g. ones that call functions)
     fn eval_const_inner(self, st: &mut InnerStab, args: &[(Rc<str>, Type)]) -> Self {
         match self {
             Expr::Ident(s, i) => {
@@ -164,8 +165,15 @@ impl Expr {
                 }
             }
 
-            Expr::Lambda(_sp, _f, _ret, _args) => todo!(),
-            Expr::Call(_sp, _f, _args) => todo!(),
+            // TODO: do this properly
+            e @ Expr::Lambda(_, _, _, _) => e,
+            Expr::Call(sp, f, call_args) => {
+                let args = call_args.into_vec().into_iter()
+                    .map(|arg| arg.eval_const_inner(st, args))
+                    .collect();
+
+                Expr::Call(sp, f, args)
+            }
 
             Expr::If(sp, cond, if_true, if_false) => {
                 let cond = cond.eval_const_inner(st, args);
@@ -263,7 +271,7 @@ impl Expr {
                                         st.access(&n);
                                         PlaceExpr::Ident(sp, n)
                                     }
-                                    PlaceExpr::Deref(_sp, e) => todo!("eval_const(deref({e}))"),
+                                    PlaceExpr::Deref(sp, e) => PlaceExpr::Deref(sp, Box::new(e.eval_const_inner(&mut st, args))),
                                     PlaceExpr::Index(_sp, e, i) => todo!("eval_const(index({e}, {i}))"),
                                     PlaceExpr::FieldAccess(_sp, e, i) => todo!("eval_const(fieldaccess({e}, {i}))"),
                                 };

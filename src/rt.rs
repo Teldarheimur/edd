@@ -14,11 +14,12 @@ pub struct RuntimeError {
 pub enum RuntimeErrorType {
     DivideByZero,
     IntOverflow(&'static str, i128, i128),
+    InvalidMain,
 }
 
 impl RuntimeErrorType {
     #[inline]
-    const fn span(self,span: Span) -> RuntimeError {
+    pub const fn span(self, span: Span) -> RuntimeError {
         RuntimeError {
             error_type: self,
             span,

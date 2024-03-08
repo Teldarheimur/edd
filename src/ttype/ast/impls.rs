@@ -1,6 +1,38 @@
 use std::fmt::{self, Display};
 
-use super::{Expr, PlaceExpr, Statement};
+use super::{Decl, Expr, PlaceExpr, Program, Statement};
+
+impl Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (name, decl) in &*self.0 {
+            match decl {
+                Decl::Static(_, bind) => {
+                    let (t, e) = &**bind;
+                    write!(f, "static {name}: {t} = {e}")?;
+                }
+                Decl::Const(_, bind) => {
+                    let (t, e) = &**bind;
+                    write!(f, "const {name}: {t} = {e}")?;
+                }
+                Decl::Fn(_, args, body) => {
+                    let (ret, body) = &**body;
+                    write!(f, "fn {name}(")?;
+                    let mut first = true;
+                    for (arg_n, arg_t) in &**args {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        first = false;
+                        write!(f, "{arg_n}: {arg_t}")?;
+                    }
+                    write!(f, ") {ret} {body}")?;
+                }
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
 
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -94,17 +126,17 @@ impl Display for Expr {
                 write!(f, "}}")
             }
             Expr::Cast(_, val, ft, tt) => write!(f, "({val} as {tt} (<-{ft})"),
-            Expr::Block(_, stmnts) => {
-                write!(f, "{{ ")?;
+           Expr::Block(_, stmnts) => {
+                writeln!(f, "{{")?;
                 let mut first = true;
                 for s in stmnts.iter() {
                     if !first {
-                        write!(f, "; ")?;
+                        writeln!(f, ";")?;
                     }
                     first = false;
-                    write!(f, "{s}")?;
+                    write!(f, "    {s}")?;
                 }
-                write!(f, "}}")
+                write!(f, "\n}}")
             }
             Expr::Raise(_, e) => write!(f, "raise(\"{e}\")"),
             Expr::Var(_, v) => write!(f, "@({v:?})"),

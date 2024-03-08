@@ -1,27 +1,96 @@
 use collect_result::CollectResult;
 
-use self::concrete::concretise_statements;
+use self::concrete::{concretise_expr, concretise_type};
 
 use super::{
-    ast::{Expr, PlaceExpr, Statement}, stab::SymbolTable, unify_types, Result, Type, TypeErrorType
+    ast::{Decl, Expr, PlaceExpr, Program, Statement}, stab::SymbolTable, unify_types, Result, Type, TypeErrorType
 };
 use crate::parse::{ast::{
-    Expr as UntypedExpr, Literal as UntypedLiteral, PlaceExpr as UntypedPle, Statement as UntypedStatement
+    Decl as UntypedDecl, Expr as UntypedExpr, Literal as UntypedLiteral, PlaceExpr as UntypedPle, Program as Prgm, Statement as UntypedStatement
 }, span::Span};
 
-pub fn check_program(statements: Box<[UntypedStatement]>, state: &SymbolTable) -> Result<(Type, Vec<Statement>)> {
-    let mut state = state.clone();
-    let mut ret_type = None;
-    let (t, mut stmnts) = check_statements(statements, &mut state, &mut ret_type)?;
-
-    concretise_statements(&mut stmnts)?;
-
-    match ret_type {
-        None => Ok((t, stmnts)),
-        Some(rt) => {
-            Ok((unify_types(Span::default(), rt, t)?, stmnts))
+pub fn check_program(Prgm(decls): Prgm, stab: &SymbolTable) -> Result<Program> {
+    let mut stab = stab.clone();
+    for (name, decl) in &decls {
+        let (mutable, span, t) = match decl {
+            UntypedDecl::Const(sp, b) => {
+                (false, sp, b.0.clone())
+            }
+            UntypedDecl::Static(sp, b) => {
+                (true, sp, b.0.clone())
+            }
+            UntypedDecl::Fn(sp, args, b) => {
+                (false, sp, Type::Function(
+                    args
+                        .iter()
+                        .map(|(_, t)| t.clone())
+                        .collect(),
+                    Box::new(b.0.clone())
+                ))
+            }
+        };
+        if stab.add(mutable, name.clone(), t) {
+            return Err(TypeErrorType::DuplicateGlobalDefinition((&**name).into()).span(*span))
         }
     }
+    
+    let mut new_decls = Vec::with_capacity(decls.len());
+
+    for (name, decl) in decls {
+        match decl {
+            UntypedDecl::Static(sp, b) => {
+                let (et, e) = *b;
+                let (at, e) = check_expr(&e, &mut stab)?;
+                let t = unify_types(sp, et, at)?;
+                let t = stab.specify(sp, &name, t)?;
+                new_decls.push((name, Decl::Static(sp, Box::new((t, e)))));
+            },
+            UntypedDecl::Const(sp, b) => {
+                let (et, e) = *b;
+                let (at, e) = check_expr(&e, &mut stab)?;
+                let t = unify_types(sp, et, at)?;
+                let t = stab.specify(sp, &name, t)?;
+                new_decls.push((name, Decl::Const(sp, Box::new((t, e)))));
+            },
+            UntypedDecl::Fn(sp, args, b) => {
+                let (t, e) = {
+                    let mut stab = stab.clone();
+                    for (arg, arg_t) in &*args {
+                        stab.add(false, arg.clone(), arg_t.clone());
+                    }
+
+                    let (et, e) = *b;
+                    let (at, e) = check_expr(&e, &mut stab)?;
+                    let t = unify_types(sp, et, at)?;
+
+                    (t, e)
+                };
+                new_decls.push((name, Decl::Fn(sp, args, Box::new((t, e)))));
+            },
+        }
+    }
+
+    for (_, decl) in &mut new_decls {
+        match decl {
+            Decl::Static(span, b) => {
+                concretise_type(*span, &mut b.0)?;
+                concretise_expr(&mut b.1)?;
+            }
+            Decl::Const(span, b) => {
+                concretise_type(*span, &mut b.0)?;
+                concretise_expr(&mut b.1)?;
+            }
+            Decl::Fn(span, a, b) => {
+                for (_, t) in &mut **a {
+                    concretise_type(*span, t)?;
+                }
+                concretise_type(*span, &mut b.0)?;
+                concretise_expr(&mut b.1)?;
+            }
+        }
+    }
+
+    Ok(Program(new_decls.into_boxed_slice()))
 }
 
 mod concrete;
@@ -94,7 +163,7 @@ fn check_literal(span: Span, lit: &UntypedLiteral) -> (Type, Expr) {
     }
 }
 
-fn check_expr(expr: &UntypedExpr, state: &mut SymbolTable) -> Result<(Type, Expr)> {
+fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
     match expr {
         UntypedExpr::Const(sp, l) => Ok(check_literal(*sp, l)),
         UntypedExpr::Ident(sp, i) => {
@@ -303,7 +372,7 @@ fn check_expr(expr: &UntypedExpr, state: &mut SymbolTable) -> Result<(Type, Expr
 
             let mut stab = state.clone();
             for (name, ty) in &*args {
-                stab.add(false, name.clone(), ty.clone())
+                stab.add(false, name.clone(), ty.clone());
             }
 
             let (bt, be) = check_expr(body, &mut stab)?;

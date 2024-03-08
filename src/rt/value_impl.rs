@@ -49,6 +49,7 @@ impl Display for RuntimeErrorType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::DivideByZero => write!(f, "Divide by zero is undefined"),
+            Self::InvalidMain => write!(f, "Invalid main"),
             Self::IntOverflow(op, a, b) => write!(f, "Overflow when applying {op} to {a} and {b}"),
         }
     }

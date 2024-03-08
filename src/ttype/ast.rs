@@ -5,7 +5,15 @@ use std::{cell::RefCell, rc::Rc};
 use super::Type;
 
 mod impls;
+#[derive(Debug, Clone)]
+pub struct Program(pub Box<[(Rc<str>, Decl)]>);
 
+#[derive(Debug, Clone)]
+pub enum Decl {
+    Static(Span, Box<(Type, Expr)>),
+    Const(Span, Box<(Type, Expr)>),
+    Fn(Span, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
+}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Express(Span, Box<Type>, Expr),

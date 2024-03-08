@@ -89,33 +89,35 @@ literal = { num | boolean | string }
 expr = { term ~ (operation ~ term)*}
 term = _{ if | lambda | literal | call | ident | unop ~ expr | "(" ~ expr ~ ")" | block }
 
-binding = _{
-    let_decl | fn_decl | var_decl | rebind
-}
-    let_decl = { "let" ~ ident ~ type_annot_opt ~ "=" ~ expr }
-    fn_decl = {
-        "fn" ~ ident ~ "(" ~ typed_idents ~ ")" ~ return_type
-        ~ block
+let_bind = { "let" ~ ident ~ type_annot_opt ~ "=" ~ expr }
+var_bind = { "var" ~ ident ~ type_annot_opt ~ "=" ~ expr }
+assign = { pl_expr ~ "=" ~ expr }
+    pl_expr = { ident |
+        deref_expr | array_index | field_access |
+        "(" ~ pl_expr ~ ")"
     }
-    var_decl = { "var" ~ ident ~ type_annot_opt ~ "=" ~ expr }
-    rebind = { pl_expr ~ "=" ~ expr }
+        deref_expr = { "*" ~ expr }
+        array_index = { expr ~ "[" ~ expr ~ "]" }
+        field_access = { expr ~ "." ~ ident }
 return = { "ret" ~ expr }
-pl_expr = { ident |
-    deref_expr | array_index | field_access |
-    "(" ~ pl_expr ~ ")"
+
+statement = { (let_bind | var_bind | assign | return | expr)? }
+statements = _{ (statement ~ (";" ~ statement)*)? }
+
+block = { "{" ~ statements ~ "}" }
+
+static_decl = {
+    "static" ~ typed_ident ~ "=" ~ expr ~ ";"
 }
-    deref_expr = { "*" ~ expr }
-    array_index = { expr ~ "[" ~ expr ~ "]" }
-    field_access = { expr ~ "." ~ ident }
-
-statement = { (binding | return | expr)? }
-    stmnts = _{ (statement ~ (";" ~ statement)*)? }
-
-block = { "{" ~ stmnts ~ "}" }
-implicit_block = { stmnts }
-
+const_decl = {
+    "const" ~ typed_ident ~ "=" ~ expr ~ ";"
+}
+fn_decl = {
+    "fn" ~ ident ~ "(" ~ typed_idents ~ ")" ~ return_type
+    ~ block
+}
 program = _{ SOI ~
-    implicit_block
+    (static_decl | const_decl | fn_decl)*
 ~ EOI }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }

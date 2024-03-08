@@ -6,6 +6,16 @@ use crate::ttype::Type;
 use super::span::Span;
 
 #[derive(Debug, Clone)]
+pub struct Program(pub Vec<(Rc<str>, Decl)>);
+
+#[derive(Debug, Clone)]
+pub enum Decl {
+    Static(Span, Box<(Type, Expr)>),
+    Const(Span, Box<(Type, Expr)>),
+    Fn(Span, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Express(Span, Expr),
     Let(Span, Rc<str>, Option<Type>, Expr),
@@ -34,6 +44,38 @@ impl Display for Literal {
             Literal::String(ref s) => write!(f, "{s:?}"),
             Literal::Boolean(v) => write!(f, "{v}"),
         }
+    }
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (name, decl) in &self.0 {
+            match decl {
+                Decl::Static(_, bind) => {
+                    let (t, e) = &**bind;
+                    write!(f, "static {name}: {t} = {e}")?;
+                }
+                Decl::Const(_, bind) => {
+                    let (t, e) = &**bind;
+                    write!(f, "const {name}: {t} = {e}")?;
+                }
+                Decl::Fn(_, args, body) => {
+                    let (ret, body) = &**body;
+                    write!(f, "fn {name}(")?;
+                    let mut first = true;
+                    for (arg_n, arg_t) in &**args {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        first = false;
+                        write!(f, "{arg_n}: {arg_t}")?;
+                    }
+                    write!(f, ") {ret} {body}")?;
+                }
+            }
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }
 
@@ -143,16 +185,16 @@ impl Display for Expr {
             }
             Expr::Cast(_, val, t) => write!(f, "({val} as {t}"),
             Expr::Block(_, stmnts) => {
-                write!(f, "{{ ")?;
+                writeln!(f, "{{")?;
                 let mut first = true;
                 for s in stmnts.iter() {
                     if !first {
-                        write!(f, "; ")?;
+                        writeln!(f, ";")?;
                     }
                     first = false;
-                    write!(f, "{s}")?;
+                    write!(f, "    {s}")?;
                 }
-                write!(f, " }}")
+                write!(f, "\n}}")
             }
         }
     }
