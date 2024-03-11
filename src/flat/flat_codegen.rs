@@ -119,7 +119,6 @@ fn flatten_expr(expr: Expr, t: Type, place: Temp, state: &mut FlattenState) {
             flatten_expr(*a, t.clone(), ta.clone(), state);
             let tb = state.new_temp("div_arg2");
             flatten_expr(*b, t.clone(), tb.clone(), state);
-            // TODO: do zero-checking of arg2
 
             let zero_t = state.new_temp("zero");
             state.add_code(Line::SetConst(zero_t.clone(), Box::new(t.clone()), Const::ConstZero));

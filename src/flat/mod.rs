@@ -2,9 +2,6 @@ use std::{collections::HashMap, rc::Rc};
 
 use crate::ttype::{ast::{Decl, Program as TypedProgram}, Type};
 
-// TODO: use this at runtime instead, which will be the last time we move where runtime sits
-// after this the flattened structured can be put either into a runtime or a codegen backend
-
 mod static_eval;
 mod ticker;
 mod flat_codegen;

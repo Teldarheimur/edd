@@ -4,8 +4,6 @@ use crate::ttype::{ast::{Expr, PlaceExpr, Statement}, Type};
 
 use super::{ticker::StaticNamer, Const, Global, StaticDecl};
 
-// TODO: also extract concats and strings from in here
-
 pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>) -> Vec<StaticDecl> {
     let mut calculate_order: Vec<(_, _, _, HashSet<_>)> = Vec::new();
     let mut static_namer = StaticNamer::new("#s");
@@ -13,11 +11,11 @@ pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>) -> Vec<StaticDe
     for (name, t, expr) in static_exprs {
         let mut deps = HashSet::new();
         expr_symbol_deps(&expr, &mut deps, &HashSet::new());
-        // TODO: insert the expr after all symbols it currently depends on
+
         let mut insert_at = 0;
         for (i, (other_name, _, _, deps)) in calculate_order.iter().enumerate() {
             if deps.contains(other_name) {
-                insert_at = i;
+                insert_at = i+1;
                 if deps.contains(&name) {
                     todo!("return cyclic dependency error");
                 }
