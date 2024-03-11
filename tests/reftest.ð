@@ -1,10 +1,11 @@
 const kage: i8 = 10;
 static mjav: i8 = 15;
 
-fn reffer(x_: i32) *i32 {
-    // This will be undefined behaviour in the future, but RN it tests pointers p well
-    var x = x_;
-    &x
+static reffer_x: i32 = 0;
+
+fn reffer(x: i32) *i32 {
+    reffer_x = x;
+    &reffer_x
 }
 
 fn main() unit {

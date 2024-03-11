@@ -40,14 +40,14 @@ pub fn check_program(Prgm(decls): Prgm, stab: &SymbolTable) -> Result<Program> {
         match decl {
             UntypedDecl::Static(sp, b) => {
                 let (et, e) = *b;
-                let (at, e) = check_expr(&e, &mut stab)?;
+                let (at, e) = check_expr(&e, &stab)?;
                 let t = unify_types(sp, et, at)?;
                 let t = stab.specify(sp, &name, t)?;
                 new_decls.push((name, Decl::Static(sp, Box::new((t, e)))));
             },
             UntypedDecl::Const(sp, b) => {
                 let (et, e) = *b;
-                let (at, e) = check_expr(&e, &mut stab)?;
+                let (at, e) = check_expr(&e, &stab)?;
                 let t = unify_types(sp, et, at)?;
                 let t = stab.specify(sp, &name, t)?;
                 new_decls.push((name, Decl::Const(sp, Box::new((t, e)))));
@@ -60,7 +60,7 @@ pub fn check_program(Prgm(decls): Prgm, stab: &SymbolTable) -> Result<Program> {
                     }
 
                     let (et, e) = *b;
-                    let (at, e) = check_expr(&e, &mut stab)?;
+                    let (at, e) = check_expr(&e, &stab)?;
                     let t = unify_types(sp, et, at)?;
 
                     (t, e)
@@ -328,7 +328,8 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
         UntypedExpr::Ref(sp, e) => {
             let (t, e) = check_expr(e, state)?;
             let t = Type::Pointer(Box::new(t));
-            Ok((t, Expr::Ref(*sp, Box::new(e))))
+            let res = convert_expr_to_pl_expr(e);
+            Ok((t, Expr::Ref(*sp, res.map_err(Box::new))))
         }
         UntypedExpr::Deref(sp, e) => {
             let (t, e) = check_expr(e, state)?;
@@ -375,7 +376,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
                 stab.add(false, name.clone(), ty.clone());
             }
 
-            let (bt, be) = check_expr(body, &mut stab)?;
+            let (bt, be) = check_expr(body, &stab)?;
             let rt = unify_types(*sp, ret.clone().unwrap_or_else(Type::any), bt)?;
 
             Ok((
@@ -395,5 +396,15 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
         UntypedExpr::Array(_sp, _) => todo!(),
         UntypedExpr::StructConstructor(_sp, _) => todo!(),
         UntypedExpr::Cast(_sp, _, _) => todo!(),
+    }
+}
+
+fn convert_expr_to_pl_expr(e: Expr) -> Result<PlaceExpr, Expr> {
+    match e {
+        Expr::Ident(sp, ident) => Ok(PlaceExpr::Ident(sp, ident)),
+        Expr::Deref(sp, e) => Ok(PlaceExpr::Deref(sp, e)),
+        // Expr::Index(sp, e1, e2) => Ok(PlaceExpr::Index(sp, e1, e2)),
+        // Expr::FieldAccess(sp, e, ident) => Ok(PlaceExpr::FieldAccess(sp, e, ident)),
+        e => Err(e),
     }
 }

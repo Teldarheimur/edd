@@ -1,0 +1,9 @@
+fn calculate(x: i32, y: i32) i32 {
+    (x + y * (x - y)) / y
+}
+
+fn main() unit {
+    print(calculate(4, 2));
+    print(calculate(-7, 4));
+    print(calculate(100, 0));
+}

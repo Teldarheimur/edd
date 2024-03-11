@@ -65,7 +65,7 @@ impl Display for Type {
             Type::CompInteger => write!(f, "comp_int"),
             Type::CompString => write!(f, "comp_string"),
             Type::Float => write!(f, "float"),
-            Type::Unit => write!(f, "()"),
+            Type::Unit => write!(f, "unit"),
             Type::Option(t) => write!(f, "?{t}"),
             Type::Pointer(t) => write!(f, "*{t}"),
             Type::ArrayPointer(t) => write!(f, "[*]{t}"),

@@ -88,10 +88,8 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
         | Expr::ConstCompInteger(_, _)
         | Expr::ConstUnit(_, )
         | Expr::ConstString(_, _)
-        | Expr::ConstNull(_, )
-        | Expr::Raise(_, _)
-        | Expr::Var(_, _) => Ok(()),
-        Expr::Ref(_, e) |
+        | Expr::ConstNull(_, ) => Ok(()),
+        Expr::Ref(_, Err(e)) |
         Expr::Cast(_, e, _, _) |
         Expr::Not(_, e) |
         Expr::Neg(_, e) |
@@ -103,6 +101,7 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
             concretise_type(*sp, ret)?;
             concretise_expr(e)
         }
+        Expr::Ref(_, Ok(pl_e)) => concretise_pexpr(pl_e),
         Expr::Block(_, stmnts) => concretise_statements(stmnts),
         Expr::StructConstructor(_, es) => {
             for (_, e) in es.iter_mut() {

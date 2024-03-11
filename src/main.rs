@@ -1,10 +1,8 @@
 use edd::{
-    parse::{parse, span::Span},
-    rt::{
-        RuntimeError, RuntimeErrorType, SymbolTable, Value
-    },
-    ttype::{
-        ast::{Decl, Program}, stab::SymbolTable as SymbolTypes, type_checker::check_program, Type
+    flat::{flatten, Program}, parse::parse, rt::{
+        run, RuntimeError, SymbolTable, Value
+    }, ttype::{
+        stab::SymbolTable as SymbolTypes, type_checker::check_program, Type
     }
 };
 
@@ -15,7 +13,7 @@ fn main() {
     let path = Path::new(&path);
 
     let program = {
-        let mut file = File::open(&path).unwrap();
+        let mut file = File::open(path).unwrap();
         let mut s = String::new();
         file.read_to_string(&mut s).unwrap();
         match parse(&s) {
@@ -47,60 +45,28 @@ fn main() {
     println!("{program}");
     println!();
 
-    match run(program) {
-        Ok(Value::Unit) => (),
+    let program = flatten(program);
+    println!("Flattened:");
+    println!("{program}");
+    println!();
+
+    match run_prgm(program) {
+        Ok(Value::Naught) => (),
         Ok(v) => println!("Returned {v}"),
-        Err(e) => eprintln!("Runtime error:\n{}:{e}", path.display()),
+        Err(RuntimeError::Panic(msg)) => eprintln!("Error: Panic {}{msg}", path.display()),
+        Err(RuntimeError::InvalidMain) => eprintln!("Error: Invalid main function"),
     }
 }
 
-fn run(Program(decls): Program) -> Result<Value, RuntimeError> {
+fn run_prgm(program: Program) -> Result<Value, RuntimeError> {
     let mut symtab = SymbolTable::new();
 
     symtab.add_func("print", |vls| {
         for vl in &*vls {
             println!("{vl}");
         }
-        Value::Unit
+        Value::Naught
     });
 
-    for (name, decl) in decls.into_vec() {
-        match decl {
-            Decl::Const(_, b) => {
-                let (_, e) = *b;
-                symtab.add_var(false, name, e.eval(&symtab)?);
-            }
-            Decl::Static(_, b) => {
-                let (_, e) = *b;
-                symtab.add_var(true, name, e.eval(&symtab)?);
-            }
-            Decl::Fn(_, args, b) => {
-                let body = b.1.eval_const(&symtab, &args);
-                let args = args.into_vec().into_iter().map(|(_, t)| t).collect();
-                symtab.add_var(false, name, Value::Function { args, body });
-            }
-        }
-    }
-
-    let ret;
-    match symtab.lookup("main") {
-        Ok(Value::Function { args, body }) => {
-            if !args.is_empty() {
-                eprintln!("main took unexpected arguments");
-                return Err(RuntimeErrorType::InvalidMain.span(Span::default()));
-            }
-
-            ret = body.eval(&symtab)?;
-        }
-        Ok(_) => {
-            eprintln!("main is not a function");
-            return Err(RuntimeErrorType::InvalidMain.span(Span::default()));
-        }
-        Err(e) => {
-            eprintln!("main function not found: {e:?}");
-            return Err(RuntimeErrorType::InvalidMain.span(Span::default()));
-        }
-    }
-
-    Ok(ret)
+    run(program, &mut symtab)
 }
