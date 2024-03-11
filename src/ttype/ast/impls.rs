@@ -78,7 +78,7 @@ impl Display for Expr {
             Expr::Sub(_, a, b) => write!(f, "({a} - {b})"),
             Expr::Mul(_, a, b) => write!(f, "({a} * {b})"),
             Expr::Div(_, a, b) => write!(f, "({a} / {b})"),
-            Expr::Concat(_, a, b) => write!(f, "({a} ++ {b}"),
+            Expr::Concat(_, a, b) => write!(f, "({a} ++ {b})"),
             Expr::Lambda(_, args, ret, body) => {
                 write!(f, "fn(")?;
                 let mut first = true;
@@ -111,7 +111,10 @@ impl Display for Expr {
             Expr::Gt(_, a, b, t) => write!(f, "({a} > {b} (: {t}))"),
             Expr::Gte(_, a, b, t) => write!(f, "({a} >= {b} (: {t}))"),
             Expr::Not(_, a) => write!(f, "!{a}"),
-            Expr::Ref(_, a) => write!(f, "&{a}"),
+            Expr::Ref(_, a) => match a {
+                Ok(e) => write!(f, "&{e}"),
+                Err(e) => write!(f, "&{e}"),
+            }
             Expr::Neg(_, a) => write!(f, "-{a}"),
             Expr::Deref(_, a) => write!(f, "*{a}"),
             Expr::Array(_, _a) => todo!(),
@@ -138,8 +141,6 @@ impl Display for Expr {
                 }
                 write!(f, "\n}}")
             }
-            Expr::Raise(_, e) => write!(f, "raise(\"{e}\")"),
-            Expr::Var(_, v) => write!(f, "@({v:?})"),
         }
     }
 }

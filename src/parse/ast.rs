@@ -127,7 +127,7 @@ impl Display for Expr {
             Expr::Sub(_, a, b) => write!(f, "({a} - {b})"),
             Expr::Mul(_, a, b) => write!(f, "({a} * {b})"),
             Expr::Div(_, a, b) => write!(f, "({a} / {b})"),
-            Expr::Concat(_, a, b) => write!(f, "({a} ++ {b}"),
+            Expr::Concat(_, a, b) => write!(f, "({a} ++ {b})"),
             Expr::Lambda(_, args, ret, body) => {
                 write!(f, "fn(")?;
                 let mut first = true;

@@ -1,45 +1,14 @@
-use std::{cell::RefCell, cmp::Ordering, collections::HashMap, ops::Neg, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, collections::{BTreeMap, HashMap}, iter, rc::Rc};
 
-use crate::{parse::span::Span, ttype::{ast::{Expr, PlaceExpr, Statement}, Type}};
+use crate::flat::{Binop, Const, Global, Ident, Label, Line, Program, StaticDecl, Temp, Unop};
 
-use collect_result::CollectResult;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RuntimeError {
-    pub error_type: RuntimeErrorType,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RuntimeErrorType {
-    DivideByZero,
-    IntOverflow(&'static str, i128, i128),
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RuntimeError {
+    Panic(Box<str>),
     InvalidMain,
 }
 
-impl RuntimeErrorType {
-    #[inline]
-    pub const fn span(self, span: Span) -> RuntimeError {
-        RuntimeError {
-            error_type: self,
-            span,
-        }
-    }
-}
-
-impl From<RuntimeErrorType> for Expr {
-    fn from(value: RuntimeErrorType) -> Self {
-        Expr::Raise(Span::default(), Box::new(value))
-    }
-}
-
 mod value_impl;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Variable {
-    Const(Value),
-    Mutable(Rc<RefCell<Value>>),
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -50,25 +19,14 @@ pub enum Value {
     U16(u16),
     I32(i32),
     U32(u32),
-    CompInt(i128),
     String(Rc<str>),
     Float(f64),
-    Unit,
 
-    Function { args: Box<[Type]>, body: Expr },
+    Function(Rc<[Line]>),
     BuiltinFn(fn(Box<[Value]>) -> Value),
-    Ref(Box<Variable>),
+    Ref(Ident),
 
-    Null,
-}
-
-impl Variable {
-    fn get(&self) -> Value {
-        match self {
-            Self::Const(l) => l.clone(),
-            Self::Mutable(rc) => rc.borrow().clone(),
-        }
-    }
+    Naught,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -79,7 +37,44 @@ pub enum SymbolError {
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
-    map: HashMap<Rc<str>, Variable>,
+    map: HashMap<Rc<str>, RefCell<Value>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeState<'a> {
+    globals: &'a SymbolTable,
+    stack: Vec<Value>,
+}
+
+impl<'a> RuntimeState<'a> {
+    pub fn with_args(globals: &'a SymbolTable, args: impl Iterator<Item=Value>) -> Self {
+        Self {
+            globals,
+            stack: iter::once(Value::Naught).chain(args).collect(),
+        }
+    }
+    pub const fn new(&self) -> Self {
+        Self {
+            globals: self.globals,
+            stack: Vec::new(),
+        }
+    }
+    pub fn set_global(&mut self, g: Global, val: Value) {
+        self.globals.mutate(g.inner(), val)
+    }
+    pub fn set_temp(&mut self, temp: Temp, val: Value) {
+        let index = temp.inner();
+        if self.stack.len() <= index {
+            self.stack.resize(index + 1, Value::Naught);
+        }
+        self.stack[index] = val;
+    }
+    pub fn lookup<I: Into<Ident>>(&self, ident: I) -> Value {
+        match ident.into() {
+            Ident::Global(g) => self.globals.lookup(g.inner()),
+            Ident::Temp(t) => self.stack[t.inner()].clone(),
+        }
+    }
 }
 
 impl SymbolTable {
@@ -87,197 +82,204 @@ impl SymbolTable {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn iter(&self) -> impl Iterator<Item=(&Rc<str>, &Variable)> {
+    pub fn iter(&self) -> impl Iterator<Item=(&Rc<str>, &RefCell<Value>)> {
         self.map.iter()
     }
     pub fn add_func<S: Into<Rc<str>>>(&mut self, name: S, f: fn(Box<[Value]>) -> Value) {
-        self.add_var(false, name, Value::BuiltinFn(f))
+        self.add_var(name, Value::BuiltinFn(f))
     }
-    pub fn add_var<S: Into<Rc<str>>>(&mut self, mutable: bool, name: S, val: Value) {
+    pub fn add_var<S: Into<Rc<str>>>(&mut self, name: S, val: Value) {
         let name = name.into();
 
-        self.map.insert(
-            name,
-            if mutable {
-                Variable::Mutable(Rc::new(RefCell::new(val)))
-            } else {
-                Variable::Const(val)
-            },
-        );
+        self.map.insert(name, RefCell::new(val));
     }
-    pub fn lookup_raw(&self, name: &str) -> Result<Variable, SymbolError> {
-        self.map
-            .get(name)
-            .cloned()
-            .ok_or(SymbolError::Undefined)
+    pub fn lookup(&self, name: &str) -> Value {
+        self.map[name].borrow().clone()
     }
-    pub fn lookup(&self, name: &str) -> Result<Value, SymbolError> {
-        self.lookup_raw(name).map(|v| v.get())
+    pub fn mutate(&self, name: &str, new_val: Value) {
+        let var = &self.map[name];
+        *var.borrow_mut() = new_val;
     }
-    pub fn mutate(&mut self, name: &str, new_val: Value) -> Result<(), SymbolError> {
-        let Some(var) = self.map.get_mut(name) else {
-            return Err(SymbolError::Undefined);
+}
+
+const fn const_to_val(c: Const) -> Value {
+    match c {
+        Const::ConstBoolean(b) => Value::Boolean(b),
+        Const::ConstI8(num) => Value::I8(num),
+        Const::ConstU8(num) => Value::U8(num),
+        Const::ConstI16(num) => Value::I16(num),
+        Const::ConstU16(num) => Value::U16(num),
+        Const::ConstI32(num) => Value::I32(num),
+        Const::ConstU32(num) => Value::U32(num),
+        Const::ConstFloat(num) => Value::Float(num),
+        Const::ConstZero => Value::Naught,
+    }
+}
+
+pub fn run(program: Program, symtab: &mut SymbolTable) -> Result<Value, RuntimeError> {
+    for static_decl in program.statics {
+        match static_decl {
+            StaticDecl::SetConst(n, _, val) => symtab.add_var(n.into_inner(), const_to_val(val)),
+            StaticDecl::SetAlias(n, _, val) => {
+                let val = symtab.lookup(val.inner());
+                symtab.add_var(n.into_inner(), val);
+            }
+            StaticDecl::SetString(n, _, val) => {
+                symtab.add_var(n.into_inner(), Value::String(val.into()));
+            }
+            StaticDecl::SetArray(_n, _, _val) => todo!(),
+            StaticDecl::SetPtr(n, _, val) => {
+                let val = Value::Ref(val.into());
+                symtab.add_var(n.into_inner(), val);
+            }
+        }
+    }
+    for (n, f) in program.fns {
+        symtab.add_var(n.into_inner(), Value::Function(f.lines.into()));
+    }
+    match symtab.lookup("main") {
+        Value::Function(body) => {
+            let mut rs = RuntimeState::with_args(symtab, [].into_iter());
+            run_lines(&body, &mut rs)
+        },
+        _ => Err(RuntimeError::InvalidMain)
+    }
+}
+
+fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeError> {
+    let mut label_cache = BTreeMap::new();
+    let mut line_pointer = 0;
+
+    let goto = |line_pointer: &mut usize, lbl: &Label, label_cache: &BTreeMap<Label, usize>| {
+        if let Some(&target) = label_cache.get(lbl) {
+            *line_pointer = target;
+            return;
+        }
+        for (i, line) in lines.iter().enumerate().skip(*line_pointer) {
+            match line {
+                Line::Label(lbl_candidate) if lbl == lbl_candidate => {
+                    *line_pointer = i;
+                    return;
+                }
+                _ => (),
+            }
+        }
+        unreachable!("goto label {lbl} not found");
+    };
+
+    loop {
+        let Some(line) = lines.get(line_pointer) else {
+            unreachable!("undefined behaviour, reached end of function without returning");
         };
-        match var {
-            Variable::Const(_) => return Err(SymbolError::NotMutable),
-            Variable::Mutable(rc) => {
-                *rc.borrow_mut() = new_val;
+        match line {
+            Line::SetConst(name, _, val) => state.set_temp(name.clone(), const_to_val(*val)),
+            Line::SetTo(name, _, val) => {
+                let val = state.lookup(val.clone());
+                state.set_temp(name.clone(), val);
             }
-        }
+            Line::SetBinop(dest, _, binop, left, right) => {
+                let left = state.lookup(left.clone());
+                let right = state.lookup(right.clone());
 
-        Ok(())
-    }
-}
-
-impl Statement {
-    pub fn run(self, symtab: &mut SymbolTable, is_return: &mut bool) -> Result<Value, RuntimeError> {
-        match self {
-            Statement::Express(_, _t, e) => e.eval(symtab),
-            Statement::Let(_, n, _t, expr) => {
-                let expr = expr.eval(symtab)?;
-                symtab.add_var(false, n, expr);
-                Ok(Value::Unit)
-            }
-            Statement::Var(_, n, _t, expr) => {
-                let expr = expr.eval(symtab)?;
-                symtab.add_var(true, n, expr);
-                Ok(Value::Unit)
-            }
-            Statement::Rebind(_, pl, expr) => {
-                let val = expr.eval(symtab)?;
-                match pl {
-                    PlaceExpr::Ident(_, n) => symtab.mutate(&n, val).unwrap(),
-                    PlaceExpr::Deref(_, ptr) => {
-                        let ptr = ptr.eval(symtab)?;
-                        let Value::Ref(v) = ptr else {
-                            unreachable!();
-                        };
-                        let Variable::Mutable(v) = *v else {
-                            unreachable!("trying to assign to a pointer to a constant");
-                        };
-                        *v.borrow_mut() = val;
-                    }
-                    PlaceExpr::FieldAccess(_, _, _) => todo!(),
-                    PlaceExpr::Index(_, _, _) => todo!(),
-                }
-                Ok(Value::Unit)
-            }
-            Statement::Return(_, e) => {
-                *is_return = true;
-                e.eval(symtab)
-            }
-        }
-    }
-}
-
-impl Expr {
-    pub fn eval(self, st: &SymbolTable) -> Result<Value, RuntimeError> {
-        match self {
-            Expr::Ident(_, i) => Ok(st.lookup(&i).expect("lookup fail should be caught by type checker")),
-            Expr::ConstBoolean(_, v) => Ok(Value::Boolean(v)),
-            Expr::ConstI8(_, v) => Ok(Value::I8(v)),
-            Expr::ConstU8(_, v) => Ok(Value::U8(v)),
-            Expr::ConstI16(_, v) => Ok(Value::I16(v)),
-            Expr::ConstU16(_, v) => Ok(Value::U16(v)),
-            Expr::ConstI32(_, v) => Ok(Value::I32(v)),
-            Expr::ConstU32(_, v) => Ok(Value::U32(v)),
-            Expr::ConstFloat(_, v) => Ok(Value::Float(v)),
-            Expr::ConstCompInteger(_, v) => Ok(Value::CompInt(v)),
-            Expr::ConstString(_, v) => Ok(Value::String(v)),
-            Expr::ConstUnit(_, ) => Ok(Value::Unit),
-            Expr::ConstNull(_, ) => Ok(Value::Null),
-            Expr::Array(_, _) => todo!(),
-            Expr::StructConstructor(_, _) => todo!(),
-            Expr::Cast(_, _, _, _) => todo!(),
-
-            Expr::Var(_, v) => Ok(v.borrow().clone()),
-            Expr::Raise(sp, e) => Err(e.span(sp)),
-            Expr::Add(span, a, b) => (a.eval(st)? + b.eval(st)?).map_err(|e| e.span(span)),
-            Expr::Sub(span, a, b) => (a.eval(st)? - b.eval(st)?).map_err(|e| e.span(span)),
-            Expr::Mul(span, a, b) => (a.eval(st)? * b.eval(st)?).map_err(|e| e.span(span)),
-            Expr::Div(span, a, b) => (a.eval(st)? / b.eval(st)?).map_err(|e| e.span(span)),
-            Expr::Concat(_, a, b) => Ok(a.eval(st)?.concat(b.eval(st)?)),
-
-            Expr::Block(_, stmnts) => {
-                let mut st = st.clone();
-                let mut is_return = false;
-                let mut last_expr = Value::Unit;
-                for stmnt in stmnts.into_vec().into_iter() {
-                    last_expr = stmnt.run(&mut st, &mut is_return)?;
-                    if is_return {
-                        todo!("return in block unsupported")
-                    }
-                }
-                Ok(last_expr)
-            }
-            Expr::Lambda(_, args, _, body) => Ok(Value::Function {
-                body: body.eval_const(st, &args),
-                args: args.iter().map(|(_, t)| t.clone()).collect(),
-            }),
-            Expr::Call(_, name, args) => {
-                let f = st.lookup(&name).expect("lookup should fail in type checking");
-
-                if let Value::BuiltinFn(f) = f {
-                    let args: Vec<_> = args
-                        .into_vec()
-                        .into_iter()
-                        .map(|arg| arg.eval(st))
-                        .collect_result()?;
-
-                    return Ok(f(args.into_boxed_slice()));
-                }
-
-                let Value::Function { args: _t_args, body } = f else {
-                    unreachable!("call on non-function");
+                let val = match binop {
+                    Binop::Add => left + right,
+                    Binop::Sub => left - right,
+                    Binop::Mul => left * right,
+                    Binop::Div => left / right,
+                    Binop::Eq => Value::Boolean(left.cmp_op(right, Ordering::Equal, false)),
+                    Binop::Neq => Value::Boolean(left.cmp_op(right, Ordering::Equal, true)),
+                    Binop::Lt => Value::Boolean(left.cmp_op(right, Ordering::Less, false)),
+                    Binop::Lte => Value::Boolean(left.cmp_op(right, Ordering::Greater, true)),
+                    Binop::Gt => Value::Boolean(left.cmp_op(right, Ordering::Greater, false)),
+                    Binop::Gte => Value::Boolean(left.cmp_op(right, Ordering::Less, true)),
                 };
+                state.set_temp(dest.clone(), val);
+            }
+            Line::SetRef(dest, src) => {
+                state.set_temp(dest.clone(), Value::Ref(src.clone()));
+            }
+            Line::SetUnop(dest, _, unop, operand) => {
+                let operand = state.lookup(operand.clone());
+                let val = match *unop {
+                    Unop::Not => match operand {
+                        Value::Boolean(b) => Value::Boolean(!b),
+                        _ => unreachable!(),
+                    },
+                    Unop::Neg => -operand,
+                    Unop::Deref => match operand {
+                        Value::Ref(r) => state.lookup(r),
+                        _ => unreachable!(),
+                    },
+                };
+                state.set_temp(dest.clone(), val);
+            }
+            Line::SetCall(dest, name, args) => {
+                let f = state.lookup(name.clone());
 
-                let mut symtab = SymbolTable::new();
-                for (i, arg) in args.into_vec().into_iter().enumerate() {
-                    symtab.add_var(false, format!("${i}"), arg.eval(st)?);
+                let val;
+                if let Value::BuiltinFn(f) = f {
+                    let args = args
+                        .iter()
+                        .map(|arg| state.lookup(arg.clone()))
+                        .collect();
+
+                    val = f(args);
+                } else if let Value::Function(f_lines) = f {
+                    let mut f_rs = RuntimeState::with_args(state.globals, args
+                        .iter()
+                        .map(|arg| state.lookup(arg.clone()))
+                    );
+
+                    val = run_lines(&f_lines, &mut f_rs)?;
+                } else {
+                    unreachable!("call on non-function");
                 }
 
-                body.eval(&symtab)
+                state.set_temp(dest.clone(), val);
             }
+            Line::Label(lbl) => {
+                label_cache.insert(lbl.clone(), line_pointer);
+            }
+            Line::If(cond, lbl_true, lbl_false) => {
+                match state.lookup(cond.clone()) {
+                    Value::Boolean(true) => goto(&mut line_pointer, lbl_true, &label_cache),
+                    Value::Boolean(false) => goto(&mut line_pointer, lbl_false, &label_cache),
+                    _ => unreachable!("non-boolean condition"),
+                }
+                continue;
+            }
+            Line::Goto(lbl) => {
+                goto(&mut line_pointer, lbl, &label_cache);
+                continue;
+            }
+            Line::WriteGlobal(dest, src) => {
+                let val = state.lookup(src.clone());
+                state.set_global(dest.clone(), val);
+            }
+            Line::ReadGlobal(dest, src) => {
+                let val = state.lookup(src.clone());
+                state.set_temp(dest.clone(), val)
+            }
+            Line::SetDeref(dest_ptr, src) => {
+                let val = state.lookup(src.clone());
 
-            Expr::If(_, cond, if_true, if_false) => {
-                match cond.eval(st)? {
-                    Value::Boolean(true) => if_true.eval(st),
-                    Value::Boolean(false) => if_false.eval(st),
-                    _ => unreachable!(),
+                let ptr = state.lookup(dest_ptr.clone());
+                let Value::Ref(v) = ptr else {
+                    unreachable!();
+                };
+                match v {
+                    Ident::Global(g) => state.set_global(g, val),
+                    Ident::Temp(t) => state.set_temp(t, val),
                 }
             }
-            Expr::Not(_, rhs) => match rhs.eval(st)? {
-                Value::Boolean(b) => Ok(Value::Boolean(!b)),
-                _ => unreachable!(),
-            },
-            Expr::Neg(span, val) => val.eval(st)?.neg().map_err(|e| e.span(span)),
-            Expr::Ref(_, referee) => match *referee {
-                Expr::Ident(_, i) => Ok(Value::Ref(Box::new(st.lookup_raw(&i).unwrap()))),
-                Expr::Var(_, v) => Ok(Value::Ref(Box::new(Variable::Mutable(v)))),
-                e => Ok(Value::Ref(Box::new(Variable::Const(e.eval(st)?)))),
-            },
-            Expr::Deref(_, reference) => match reference.eval(st).unwrap() {
-                Value::Ref(r) => Ok(r.get()),
-                _ => unreachable!(),
+            Line::SetIndex(_, _) => todo!(),
+            Line::Panic(msg) => {
+                return Err(RuntimeError::Panic(msg.clone()));
             }
-            Expr::Eq(_, a, b, _t) => Ok(Value::Boolean(a
-                .eval(st)?
-                .cmp_op(b.eval(st)?, Ordering::Equal, false))),
-            Expr::Neq(_, a, b, _t) => Ok(Value::Boolean(a
-                .eval(st)?
-                .cmp_op(b.eval(st)?, Ordering::Equal, true))),
-            Expr::Lt(_, a, b, _t) => Ok(Value::Boolean(a
-                .eval(st)?
-                .cmp_op(b.eval(st)?, Ordering::Less, false))),
-            Expr::Lte(_, a, b, _t) => Ok(Value::Boolean(a
-                .eval(st)?
-                .cmp_op(b.eval(st)?, Ordering::Greater, true))),
-            Expr::Gt(_, a, b, _t) => Ok(Value::Boolean(a
-                .eval(st)?
-                .cmp_op(b.eval(st)?, Ordering::Greater, false))),
-            Expr::Gte(_, a, b, _t) => Ok(Value::Boolean(a
-                .eval(st)?
-                .cmp_op(b.eval(st)?, Ordering::Less, true))),
+            Line::Ret(name) => {
+                break Ok(state.lookup(name.clone()));
+            }
         }
+        line_pointer += 1;
     }
 }

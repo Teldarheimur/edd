@@ -4,5 +4,5 @@ fn main() i32 {
 
     let f = fn(x) x * 0; // hestefest
     print(f);
-    f(241241) // hest
+    f(if 5 > 2: 241241 else -1) // hest
 }

@@ -10,6 +10,7 @@
   - [ ] use i16 by default when compint is the final type
 - [x] Don't have statements outside functions
   - [ ] split up program grammar to declarations in the top (including from other files) and then definitions afterwards
+- [ ] add wrapping arithmetic operators
 - [ ] codegen
 - [ ] make pointers work
 - [ ] add structs and enums
