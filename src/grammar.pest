@@ -49,7 +49,7 @@ mtyped_ident = { ident ~ type_annot_opt }
 
 operation = _{
     concat | add | subtract | multiply | divide |
-    eq | neq | lt | lte | gt | gte | cast_as
+    eq | neq | lte | gte | gt | lt | cast_as
 }
     add      = { "+" }
     concat   = { "++" }
