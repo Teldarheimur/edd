@@ -1,5 +1,5 @@
-const kage: i8 = 10;
-static mjav: i8 = 15;
+const kage: i32 = 10;
+static mjav: i32 = 15;
 
 static reffer_x: i32 = 0;
 
@@ -11,9 +11,9 @@ fn reffer(x: i32) *i32 {
 fn main() unit {
     mjav = kage + mjav;
     let hest = reffer(9);
-    print(mjav - 4);
+    putint(mjav - 4);
 
-    print(*hest);
+    putint(*hest);
     *hest = 42;
-    print(*hest);
+    putint(*hest);
 }

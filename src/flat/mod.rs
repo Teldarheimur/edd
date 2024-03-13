@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::ttype::{ast::{Decl, Program as TypedProgram}, Type};
+use crate::ttype::ast::{Decl, Program as TypedProgram};
 
 mod static_eval;
 mod ticker;
@@ -9,25 +9,30 @@ mod impls;
 
 use self::{flat_codegen::flatten_function, static_eval::compute_statics};
 
-pub fn flatten(program: TypedProgram) -> Program {
+pub fn flatten(program: TypedProgram, external_symbols: impl IntoIterator<Item=(Rc<str>, FlatType)>) -> Program {
     let mut fn_exprs = HashMap::new();
+    let mut fns = HashMap::new();
     let mut decl_exprs = Vec::new();
     for (name, decl) in program.0.into_vec() {
         match decl {
             Decl::Fn(_, args, b) => {
-                fn_exprs.insert(name, (args, b.0, b.1));
+                let glbl = Global(name);
+                fns.insert(glbl.clone(), Function::init(args, b.0)); 
+                fn_exprs.insert(glbl, b.1);
             }
             Decl::Const(_, b) | Decl::Static(_, b) => {
                 decl_exprs.push((name, b.0, b.1));
             }
         }
     }
-    let mut statics = compute_statics(decl_exprs);
+    let mut statics = compute_statics(decl_exprs, external_symbols
+        .into_iter()
+        .map(|(n, t)| StaticDecl::External(Global(n), t))
+        .collect()
+    );
 
-    let mut fns = HashMap::new();
-    for (name, (args, ret, body)) in fn_exprs {
-        let function = flatten_function(&name, args, ret, body, &mut statics, &mut fns);
-        fns.insert(Global(name), function);
+    for (name, body) in fn_exprs {
+        flatten_function(name, body, &mut statics, &mut fns);
     }
 
     Program {
@@ -70,9 +75,30 @@ impl From<Temp> for Ident {
         Ident::Temp(t)
     }
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FlatType {
+    Unit,
+
+    Bool,
+    U8,
+    I8,
+    U16,
+    I16,
+    U32,
+    I32,
+    /// limited support
+    Float,
+
+    Ptr(Option<Box<Self>>),
+    FnPtr(Box<[Self]>, Box<Self>),
+    Arr(Box<Self>, u16),
+    Struct(Box<[Self]>),
+}
 
 #[derive(Debug, Clone)]
 pub struct Function {
+    pub arg_types: Box<[FlatType]>,
+    pub ret_type: FlatType,
     pub lines: Vec<Line>,
     pub local_names: Vec<Box<str>>,
 }
@@ -83,29 +109,33 @@ pub struct Program {
 }
 #[derive(Debug, Clone)]
 pub enum StaticDecl {
-    SetConst(Global, Box<Type>, Const),
-    SetAlias(Global, Box<Type>, Global),
-    SetArray(Global, Box<Type>, Box<[Const]>),
-    SetString(Global, Box<Type>, Box<str>),
-    SetPtr(Global, Box<Type>, Global),
+    SetConst(Global, FlatType, Const),
+    SetAlias(Global, FlatType, Global),
+    SetArray(Global, FlatType, Box<[Const]>),
+    SetString(Global, FlatType, Box<str>),
+    SetPtr(Global, FlatType, Global),
+    External(Global, FlatType),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Line {
-    SetConst(Temp, Box<Type>, Const),
-    SetTo(Temp, Box<Type>, Temp),
-    SetBinop(Temp, Box<Type>, Binop, Temp, Temp),
-    SetUnop(Temp, Box<Type>, Unop, Temp),
+    SetConst(Temp, FlatType, Const),
+    SetTo(Temp, FlatType, Temp),
+    SetBinop(Temp, FlatType, Binop, Temp, Temp),
+    SetUnop(Temp, FlatType, Unop, Temp),
 
-    SetCall(Temp, Ident, Box<[Temp]>),
-    SetDeref(Temp, Temp),
-    SetIndex(Temp, Temp),
-    SetRef(Temp, Ident),
+    SetCall(Temp, FlatType, Ident, Box<[Temp]>),
+    /// first `Temp` must contain a pointer
+    WriteTo(Temp, FlatType, Temp),
+    // TODO: merge with `WriteTo` using a offset where `Temp(0)` represents no offset
+    SetIndex(Temp, FlatType, Temp),
+    SetAddrOf(Temp, FlatType, Ident),
 
-    ReadGlobal(Temp, Global),
-    WriteGlobal(Global, Temp),
+    ReadGlobal(Temp, FlatType, Global),
+    WriteGlobal(Global, FlatType, Temp),
 
     Label(Label),
+    /// `Temp` argument must be bool
     If(Temp, Label, Label),
     Goto(Label),
     Ret(Temp),

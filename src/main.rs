@@ -1,5 +1,5 @@
 use edd::{
-    flat::{flatten, Program}, parse::parse, rt::{
+    flat::{flatten, FlatType, Program}, parse::parse, rt::{
         run, RuntimeError, SymbolTable, Value
     }, ttype::{
         stab::SymbolTable as SymbolTypes, type_checker::check_program, Type
@@ -30,7 +30,8 @@ fn main() {
 
     let stab = {
         let mut stab = SymbolTypes::new();
-        stab.add(false, "print", Type::Function(Box::new([Type::Opaque]), Box::new(Type::Unit)));
+        stab.add(false, "puts", Type::Function(Box::new([Type::Slice(Box::new(Type::Byte))]), Box::new(Type::Unit)));
+        stab.add(false, "putint", Type::Function(Box::new([Type::I32]), Box::new(Type::Unit)));
         stab
     };
 
@@ -45,7 +46,10 @@ fn main() {
     println!("{program}");
     println!();
 
-    let program = flatten(program);
+    let program = flatten(program, vec![
+        ("puts".into(), FlatType::FnPtr(Box::new([FlatType::Ptr(Some(Box::new(FlatType::U8)))]), Box::new(FlatType::Unit))),
+        ("putint".into(), FlatType::FnPtr(Box::new([FlatType::I32]), Box::new(FlatType::Unit))),
+    ]);
     println!("Flattened:");
     println!("{program}");
     println!();
@@ -61,7 +65,13 @@ fn main() {
 fn run_prgm(program: Program) -> Result<Value, RuntimeError> {
     let mut symtab = SymbolTable::new();
 
-    symtab.add_func("print", |vls| {
+    symtab.add_func("puts", |vls| {
+        for vl in &*vls {
+            println!("{vl}");
+        }
+        Value::Naught
+    });
+    symtab.add_func("putint", |vls| {
         for vl in &*vls {
             println!("{vl}");
         }

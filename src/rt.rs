@@ -132,6 +132,9 @@ pub fn run(program: Program, symtab: &mut SymbolTable) -> Result<Value, RuntimeE
                 let val = Value::Ref(val.into());
                 symtab.add_var(n.into_inner(), val);
             }
+            StaticDecl::External(n, _) => {
+                let _ = symtab.lookup(&n.inner());
+            }
         }
     }
     for (n, f) in program.fns {
@@ -195,7 +198,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 };
                 state.set_temp(dest.clone(), val);
             }
-            Line::SetRef(dest, src) => {
+            Line::SetAddrOf(dest, _, src) => {
                 state.set_temp(dest.clone(), Value::Ref(src.clone()));
             }
             Line::SetUnop(dest, _, unop, operand) => {
@@ -213,7 +216,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 };
                 state.set_temp(dest.clone(), val);
             }
-            Line::SetCall(dest, name, args) => {
+            Line::SetCall(dest, _, name, args) => {
                 let f = state.lookup(name.clone());
 
                 let val;
@@ -252,15 +255,15 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 goto(&mut line_pointer, lbl, &label_cache);
                 continue;
             }
-            Line::WriteGlobal(dest, src) => {
+            Line::WriteGlobal(dest, _, src) => {
                 let val = state.lookup(src.clone());
                 state.set_global(dest.clone(), val);
             }
-            Line::ReadGlobal(dest, src) => {
+            Line::ReadGlobal(dest, _, src) => {
                 let val = state.lookup(src.clone());
                 state.set_temp(dest.clone(), val)
             }
-            Line::SetDeref(dest_ptr, src) => {
+            Line::WriteTo(dest_ptr, _, src) => {
                 let val = state.lookup(src.clone());
 
                 let ptr = state.lookup(dest_ptr.clone());
@@ -272,7 +275,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                     Ident::Temp(t) => state.set_temp(t, val),
                 }
             }
-            Line::SetIndex(_, _) => todo!(),
+            Line::SetIndex(_, _, _) => todo!(),
             Line::Panic(msg) => {
                 return Err(RuntimeError::Panic(msg.clone()));
             }

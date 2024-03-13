@@ -2,9 +2,9 @@ use std::{collections::HashSet, rc::Rc};
 
 use crate::ttype::{ast::{Expr, PlaceExpr, Statement}, Type};
 
-use super::{ticker::StaticNamer, Const, Global, StaticDecl};
+use super::{flat_codegen::flatten_type, ticker::StaticNamer, Const, FlatType, Global, StaticDecl};
 
-pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>) -> Vec<StaticDecl> {
+pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>, statics: Vec<StaticDecl>) -> Vec<StaticDecl> {
     let mut calculate_order: Vec<(_, _, _, HashSet<_>)> = Vec::new();
     let mut static_namer = StaticNamer::new("#s");
 
@@ -24,9 +24,9 @@ pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>) -> Vec<StaticDe
         calculate_order.insert(insert_at, (name, t, expr, deps));
     }
 
-    let mut out = Vec::new();
+    let mut out = statics;
     for (name, t, expr, _) in calculate_order {
-        static_eval(Global(name), t, expr, &mut static_namer, &mut out).unwrap();
+        static_eval(Global(name), flatten_type(t), expr, &mut static_namer, &mut out).unwrap();
     }
 
     out
@@ -39,6 +39,7 @@ fn lookup_in_out<'a>(out: &'a [StaticDecl], name: &Global) -> &'a StaticDecl {
             StaticDecl::SetAlias(g, _, _) |
             StaticDecl::SetArray(g, _, _) |
             StaticDecl::SetString(g, _, _) |
+            StaticDecl::External(g, _) |
             StaticDecl::SetPtr(g, _, _)) => {
                 if g == name {
                     return sd;
@@ -49,68 +50,68 @@ fn lookup_in_out<'a>(out: &'a [StaticDecl], name: &Global) -> &'a StaticDecl {
     unreachable!()
 }
 
-pub fn static_eval(place: Global, t: Type, expr: Expr, namer: &mut StaticNamer, out: &mut Vec<StaticDecl>) -> Result<(), Box<str>>{
+pub fn static_eval(place: Global, t: FlatType, expr: Expr, namer: &mut StaticNamer, out: &mut Vec<StaticDecl>) -> Result<(), Box<str>>{
     match expr {
         Expr::Ident(_, alias) => {
-            out.push(StaticDecl::SetAlias(place, Box::new(t), Global(alias)));
+            out.push(StaticDecl::SetAlias(place, t, Global(alias)));
             Ok(())
         }
         Expr::ConstBoolean(_, b) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstBoolean(b)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstBoolean(b)));
             Ok(())
         }
         Expr::ConstI8(_, num) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstI8(num)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstI8(num)));
             Ok(())
         }
         Expr::ConstU8(_, num) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstU8(num)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstU8(num)));
             Ok(())
         }
         Expr::ConstI16(_, num) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstI16(num)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstI16(num)));
             Ok(())
         }
         Expr::ConstU16(_, num) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstU16(num)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstU16(num)));
             Ok(())
         }
         Expr::ConstI32(_, num) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstI32(num)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstI32(num)));
             Ok(())
         }
         Expr::ConstU32(_, num) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstU32(num)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstU32(num)));
             Ok(())
         }
         Expr::ConstFloat(_, num) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstFloat(num)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstFloat(num)));
             Ok(())
         }
         Expr::ConstCompInteger(_, num) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstI32(num as i32)));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstI32(num as i32)));
             Ok(())
         }
         Expr::ConstUnit(_) | Expr::ConstNull(_) => {
-            out.push(StaticDecl::SetConst(place, Box::new(t), Const::ConstZero));
+            out.push(StaticDecl::SetConst(place, t, Const::ConstZero));
             Ok(())
         }
         Expr::Ref(_, Err(e)) => {
             let place_ref = namer.new_global("ref");
             {
                 let t = match &t {
-                    Type::Pointer(p) => (**p).clone(),
+                    FlatType::Ptr(p) => (**p.as_ref().unwrap()).clone(),
                     _ => unreachable!(),
                 };
                 static_eval(place_ref.clone(), t, *e, namer, out)?;
             }
-            out.push(StaticDecl::SetPtr(place, Box::new(t), place_ref));
+            out.push(StaticDecl::SetPtr(place, t, place_ref));
             Ok(())
         }
         Expr::ConstString(_, string) => {
             // TODO: check the type and put the string accordingly
             let string: Box<str> = (*string).to_owned().into();
-            out.push(StaticDecl::SetString(place, Box::new(t), string));
+            out.push(StaticDecl::SetString(place, t, string));
             Ok(())
         }
         Expr::Concat(_, l, r) => {
@@ -131,7 +132,7 @@ pub fn static_eval(place: Global, t: Type, expr: Expr, namer: &mut StaticNamer, 
                 }
             }
 
-            out.push(StaticDecl::SetString(place, Box::new(t), res));
+            out.push(StaticDecl::SetString(place, t, res));
             Ok(())
         }
         Expr::Ref(_, Ok(_)) => todo!(),
