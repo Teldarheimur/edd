@@ -1,3 +1,5 @@
+include("std.ðs");
+
 fn main() i32 {
     putint(124124);
 

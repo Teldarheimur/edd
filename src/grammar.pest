@@ -116,8 +116,22 @@ fn_decl = {
     "fn" ~ ident ~ "(" ~ typed_idents ~ ")" ~ return_type
     ~ block
 }
+extern_decl = {
+    "extern" ~ typed_ident ~ ";"
+}
+extern_fn_decl = {
+    "extern" ~ "fn" ~ ident ~ "(" ~ typed_idents ~ ")" ~ return_type
+    ~ ";"
+}
+include = {
+    "include" ~ "(" ~ string ~ ")" ~ ";"
+}
 program = _{ SOI ~
-    (static_decl | const_decl | fn_decl)*
+    (
+        static_decl | const_decl | fn_decl
+        | extern_fn_decl | extern_decl
+        | include
+    )*
 ~ EOI }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }

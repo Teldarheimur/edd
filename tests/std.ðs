@@ -1,0 +1,2 @@
+extern fn puts(s: []u8) unit;
+extern fn putint(n: i32) unit;

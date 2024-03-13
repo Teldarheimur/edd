@@ -1,23 +1,23 @@
-use crate::{parse::span::Span, ttype::{
+use crate::{parse::location::Location, ttype::{
     ast::{Expr, PlaceExpr, Statement}, Result, Type
 }};
 
-pub fn concretise_type(span: Span, t: &mut Type) -> Result<()> {
+pub fn concretise_type(loc: Location, t: &mut Type) -> Result<()> {
     match t {
         Type::Unknown(v) => {
-            *t = v.clone().concretise().map_err(|e| e.span(span))?;
+            *t = v.clone().concretise().map_err(|e| e.location(loc))?;
             Ok(())
         }
-        Type::Option(t) => concretise_type(span, t),
-        Type::ArrayPointer(t) => concretise_type(span, t),
-        Type::Pointer(t) => concretise_type(span, t),
-        Type::Slice(t) => concretise_type(span, t),
-        Type::Array(t, _) => concretise_type(span, t),
+        Type::Option(t) => concretise_type(loc, t),
+        Type::ArrayPointer(t) => concretise_type(loc, t),
+        Type::Pointer(t) => concretise_type(loc, t),
+        Type::Slice(t) => concretise_type(loc, t),
+        Type::Array(t, _) => concretise_type(loc, t),
         Type::Function(args, ret) => {
             for arg in &mut **args {
-                concretise_type(span, arg)?;
+                concretise_type(loc.clone(), arg)?;
             }
-            concretise_type(span, ret)
+            concretise_type(loc, ret)
         }
         Type::Struct(_) => todo!(),
         Type::Opaque
@@ -44,16 +44,16 @@ pub fn concretise_statements(stmnts: &mut [Statement]) -> Result<()> {
 }
 pub fn concretise_statement(stmnt: &mut Statement) -> Result<()> {
     match stmnt {
-        Statement::Express(span, t, e) => {
-            concretise_type(*span, t)?;
+        Statement::Express(loc, t, e) => {
+            concretise_type(loc.clone(), t)?;
             concretise_expr(e)
         }
-        Statement::Let(span, _, t, e) => {
-            concretise_type(*span, t)?;
+        Statement::Let(loc, _, t, e) => {
+            concretise_type(loc.clone(), t)?;
             concretise_expr(e)
         }
-        Statement::Var(span, _, t, e) => {
-            concretise_type(*span, t)?;
+        Statement::Var(loc, _, t, e) => {
+            concretise_type(loc.clone(), t)?;
             concretise_expr(e)
         }
         Statement::Rebind(_, p, e) => {
@@ -94,11 +94,11 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
         Expr::Not(_, e) |
         Expr::Neg(_, e) |
         Expr::Deref(_, e) => concretise_expr(e),
-        Expr::Lambda(sp, args, ret, e) => {
+        Expr::Lambda(loc, args, ret, e) => {
             for (_, at) in args.iter_mut() {
-                concretise_type(*sp, at)?;
+                concretise_type(loc.clone(), at)?;
             }
-            concretise_type(*sp, ret)?;
+            concretise_type(loc.clone(), ret)?;
             concretise_expr(e)
         }
         Expr::Ref(_, Ok(pl_e)) => concretise_pexpr(pl_e),

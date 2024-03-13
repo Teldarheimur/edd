@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::parse::span::Span;
+use crate::parse::location::Location;
 
 use super::{unify_types, Result, Type, TypeErrorType};
 
@@ -42,21 +42,21 @@ impl SymbolTable {
     pub fn lookup(&self, name: &str) -> Result<Type, TypeErrorType> {
         self.lookup_raw(name).map(|sym| sym.s_type)
     }
-    pub fn specify(&mut self, span: Span, name: &str, t: Type) -> Result<Type> {
+    pub fn specify(&mut self, loc: Location, name: &str, t: Type) -> Result<Type> {
         let et = self.map.get(name).cloned().unwrap().s_type;
-        let ut = unify_types(span, et, t)?;
+        let ut = unify_types(loc, et, t)?;
         self.map.get_mut(name).unwrap().s_type = ut.clone();
 
         Ok(ut)
     }
-    pub fn mutate(&mut self, span: Span, name: &str, t: Type) -> Result<Type> {
+    pub fn mutate(&mut self, loc: Location, name: &str, t: Type) -> Result<Type> {
         let Some(Symbol { s_type, mutable }) = self.map.get(name).cloned() else {
-            return Err(TypeErrorType::Undefined(name.into()).span(span));
+            return Err(TypeErrorType::Undefined(name.into()).location(loc));
         };
         if !mutable {
-            return Err(TypeErrorType::NotMutable(name.into()).span(span));
+            return Err(TypeErrorType::NotMutable(name.into()).location(loc));
         }
-        let ut = unify_types(span, t, s_type)?;
+        let ut = unify_types(loc, t, s_type)?;
         self.map.get_mut(name).unwrap().s_type = ut.clone();
 
         Ok(ut)

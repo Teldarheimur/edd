@@ -27,6 +27,21 @@ impl Display for Program {
                     }
                     write!(f, ") {ret} {body}")?;
                 }
+                Decl::ExternStatic(_, t) => {
+                    write!(f, "extern {name}: {t}")?;
+                }
+                Decl::ExternFn(_, args, ret) => {
+                    write!(f, "fn {name}(")?;
+                    let mut first = true;
+                    for (arg_n, arg_t) in &**args {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        first = false;
+                        write!(f, "{arg_n}: {arg_t}")?;
+                    }
+                    write!(f, ") {ret}")?;
+                }
             }
             writeln!(f)?;
         }

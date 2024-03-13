@@ -1,3 +1,5 @@
+include("std.ðs");
+
 const kage: i32 = 10;
 static mjav: i32 = 15;
 

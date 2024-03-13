@@ -7,12 +7,13 @@ mod ticker;
 mod flat_codegen;
 mod impls;
 
-use self::{flat_codegen::flatten_function, static_eval::compute_statics};
+use self::{flat_codegen::{flatten_function, flatten_type}, static_eval::compute_statics};
 
-pub fn flatten(program: TypedProgram, external_symbols: impl IntoIterator<Item=(Rc<str>, FlatType)>) -> Program {
+pub fn flatten(program: TypedProgram) -> Program {
     let mut fn_exprs = HashMap::new();
     let mut fns = HashMap::new();
     let mut decl_exprs = Vec::new();
+    let mut external_symbols = Vec::new();
     for (name, decl) in program.0.into_vec() {
         match decl {
             Decl::Fn(_, args, b) => {
@@ -23,13 +24,19 @@ pub fn flatten(program: TypedProgram, external_symbols: impl IntoIterator<Item=(
             Decl::Const(_, b) | Decl::Static(_, b) => {
                 decl_exprs.push((name, b.0, b.1));
             }
+            Decl::ExternFn(_, args, ret) => {
+                let t = FlatType::FnPtr(
+                    args.into_vec().into_iter().map(|(_, t)| flatten_type(t)).collect(),
+                    Box::new(flatten_type(*ret)),
+                );
+                external_symbols.push(StaticDecl::External(Global(name), t));
+            }
+            Decl::ExternStatic(_, t) => {
+                external_symbols.push(StaticDecl::External(Global(name), flatten_type(*t)));
+            }
         }
     }
-    let mut statics = compute_statics(decl_exprs, external_symbols
-        .into_iter()
-        .map(|(n, t)| StaticDecl::External(Global(n), t))
-        .collect()
-    );
+    let mut statics = compute_statics(decl_exprs, external_symbols);
 
     for (name, body) in fn_exprs {
         flatten_function(name, body, &mut statics, &mut fns);

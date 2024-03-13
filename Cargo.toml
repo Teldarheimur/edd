@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.4"
-clap = "4.5"
+clap = {version = "4.5", features = ["derive"]}
 pest = "2.7"
 pest_derive = "2.7"
 collect_result = "0.1"

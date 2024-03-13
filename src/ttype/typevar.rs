@@ -2,7 +2,7 @@ use std::{
     cell::RefCell, collections::HashSet, fmt::{self, Display}, hash::{Hash, Hasher}, ptr, rc::Rc
 };
 
-use crate::parse::span::Span;
+use crate::parse::location::Location;
 
 use super::{unify_types, Result, Type, TypeErrorType};
 
@@ -43,10 +43,10 @@ impl TypeVar {
             Inner::Alias(tv) => tv.clone().concretise(),
         }
     }
-    pub fn merge_with_type(&self, span: Span, t: Type) -> Result<Type> {
+    pub fn merge_with_type(&self, loc: Location, t: Type) -> Result<Type> {
         let brw = RefCell::borrow(&self.inner);
         let t = match &*brw {
-            Inner::Alias(tv) => return tv.merge_with_type(span, t),
+            Inner::Alias(tv) => return tv.merge_with_type(loc, t),
             Inner::Any => t,
             Inner::Constrained(set) => {
                 if set.contains(&t) {
@@ -55,19 +55,19 @@ impl TypeVar {
                     todo!("error type {t} \\not\\in {set:?}");
                 }
             }
-            Inner::Concrete(ct) => unify_types(span, ct.clone(), t)?,
+            Inner::Concrete(ct) => unify_types(loc, ct.clone(), t)?,
         };
         drop(brw);
 
         *RefCell::borrow_mut(&self.inner) = Inner::Concrete(t.clone());
         Ok(t)
     }
-    pub fn merge(&self, span: Span, other: &Self) -> Result<Self> {
+    pub fn merge(&self, loc: Location, other: &Self) -> Result<Self> {
         let s = RefCell::borrow(&self.inner);
         let o = RefCell::borrow(&other.inner);
         match (&*s, &*o) {
-            (Inner::Alias(tv), _) => tv.merge(span, other),
-            (_, Inner::Alias(tv)) => self.merge(span, tv),
+            (Inner::Alias(tv), _) => tv.merge(loc, other),
+            (_, Inner::Alias(tv)) => self.merge(loc, tv),
             (_, Inner::Any) => {
                 drop((s, o));
                 *RefCell::borrow_mut(&other.inner) = Inner::Alias(self.clone());
@@ -79,7 +79,7 @@ impl TypeVar {
                 Ok(other.clone())
             }
             (Inner::Concrete(t1), Inner::Concrete(t2)) => {
-                let t = unify_types(span, t1.clone(), t2.clone())?;
+                let t = unify_types(loc, t1.clone(), t2.clone())?;
                 drop((s, o));
                 *RefCell::borrow_mut(&self.inner) = Inner::Concrete(t);
                 *RefCell::borrow_mut(&other.inner) = Inner::Alias(self.clone());
@@ -106,7 +106,7 @@ impl TypeVar {
             (Inner::Constrained(set1), Inner::Constrained(set2)) => {
                 let setu = set1 & set2;
                 match setu.len() {
-                    0 => Err(TypeErrorType::DisjointContraints(set1.clone(), set2.clone()).span(span)),
+                    0 => Err(TypeErrorType::DisjointContraints(set1.clone(), set2.clone()).location(loc)),
                     1 => {
                         drop((s, o));
                         let ft = setu.into_iter().next().unwrap();

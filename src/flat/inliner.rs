@@ -1,4 +1,4 @@
-use crate::{parse::span::Span, rt::{RuntimeErrorType, SymbolTable, Value, Variable}, ttype::Type};
+use crate::{parse::location::Location, rt::{RuntimeErrorType, SymbolTable, Value, Variable}, ttype::Type};
 
 use std::{cmp::Ordering, collections::HashMap, ops::Neg, rc::Rc};
 
@@ -6,14 +6,14 @@ use super::{Expr, PlaceExpr, Statement};
 
 // TODO: move this into optimisations module
 
-fn try_binop<F, F2>(span: Span, a: Expr, b: Expr, binop: F, fallback: F2) -> Expr
+fn try_binop<F, F2>(loc: Location, a: Expr, b: Expr, binop: F, fallback: F2) -> Expr
 where
     F: FnOnce(Value, Value) -> Result<Value, RuntimeErrorType>,
-    F2: FnOnce(Span, Box<Expr>, Box<Expr>) -> Expr,
+    F2: FnOnce(Location, Box<Expr>, Box<Expr>) -> Expr,
 {
     match (a.as_value(), b.as_value()) {
-        (Some(a), Some(b)) => binop(a, b).map(Expr::from).unwrap_or_else(Expr::from).spanned(span),
-        (_, _) => fallback(span, Box::new(a), Box::new(b)),
+        (Some(a), Some(b)) => binop(a, b).map(Expr::from).unwrap_or_else(Expr::from).locanned(locan),
+        (_, _) => fallback(locan, Box::new(a), Box::new(b)),
     }
 }
 
@@ -103,7 +103,7 @@ impl Expr {
             | Expr::ConstUnit(_)
             | Expr::ConstString(_, _)
             | Expr::ConstNull(_) => self,
-            Expr::Add(sp, a, b) => {
+            Expr::Add(loc, a, b) => {
                 let a = a.eval_const_inner(st, args);
                 let b = b.eval_const_inner(st, args);
 
@@ -112,20 +112,20 @@ impl Expr {
                 } else if b.is_const_zero() {
                     a
                 } else {
-                    try_binop(sp, a, b, |a, b| a + b, Expr::Add)
+                    try_binop(loc, a, b, |a, b| a + b, Expr::Add)
                 }
             }
-            Expr::Sub(sp, a, b) => {
+            Expr::Sub(loc, a, b) => {
                 let a = a.eval_const_inner(st, args);
                 let b = b.eval_const_inner(st, args);
 
                 if b.is_const_zero() {
                     a
                 } else {
-                    try_binop(sp, a, b, |a, b| a - b, Expr::Sub)
+                    try_binop(loc, a, b, |a, b| a - b, Expr::Sub)
                 }
             }
-            Expr::Mul(sp, a, b) => {
+            Expr::Mul(loc, a, b) => {
                 let a = a.eval_const_inner(st, args);
                 let b = b.eval_const_inner(st, args);
 
@@ -138,151 +138,151 @@ impl Expr {
                 } else if b.is_const_one() {
                     b
                 } else {
-                    try_binop(sp, a, b, |a, b| a * b, Expr::Mul)
+                    try_binop(loc, a, b, |a, b| a * b, Expr::Mul)
                 }
             }
-            Expr::Div(sp, a, b) => {
+            Expr::Div(loc, a, b) => {
                 let a = a.eval_const_inner(st, args);
                 let b = b.eval_const_inner(st, args);
 
                 if b.is_const_zero() {
-                    Expr::Raise(sp, Box::new(RuntimeErrorType::DivideByZero))
+                    Expr::Raise(loc, Box::new(RuntimeErrorType::DivideByZero))
                 } else if b.is_const_one() {
                     a
                 } else {
-                    try_binop(sp, a, b, |a, b| a / b, Expr::Div)
+                    try_binop(loc, a, b, |a, b| a / b, Expr::Div)
                 }
             }
-            Expr::Concat(sp, a, b) => {
+            Expr::Concat(loc, a, b) => {
                 let a = a.eval_const_inner(st, args);
                 let b = b.eval_const_inner(st, args);
 
                 match (a, b) {
                     (Expr::ConstString(_, a), Expr::ConstString(_, b)) => {
-                        Expr::ConstString(sp, format!("{a}{b}").into())
+                        Expr::ConstString(loc, format!("{a}{b}").into())
                     }
-                    (a, b) => Expr::Concat(sp, Box::new(a), Box::new(b)),
+                    (a, b) => Expr::Concat(loc, Box::new(a), Box::new(b)),
                 }
             }
 
             // TODO: do this properly
             e @ Expr::Lambda(_, _, _, _) => e,
-            Expr::Call(sp, f, call_args) => {
+            Expr::Call(loc, f, call_args) => {
                 let args = call_args.into_vec().into_iter()
                     .map(|arg| arg.eval_const_inner(st, args))
                     .collect();
 
-                Expr::Call(sp, f, args)
+                Expr::Call(loc, f, args)
             }
 
-            Expr::If(sp, cond, if_true, if_false) => {
+            Expr::If(loc, cond, if_true, if_false) => {
                 let cond = cond.eval_const_inner(st, args);
 
                 match cond {
                     Expr::ConstBoolean(_, true) => if_true.eval_const_inner(st, args),
                     Expr::ConstBoolean(_, false) => if_false.eval_const_inner(st, args),
                     c => Expr::If(
-                        sp,
+                        loc,
                         Box::new(c),
                         Box::new(if_true.eval_const_inner(st, args)),
                         Box::new(if_false.eval_const_inner(st, args)),
                     ),
                 }
             }
-            Expr::Not(sp, rhs) => {
+            Expr::Not(loc, rhs) => {
                 let rhs = rhs.eval_const_inner(st, args);
                 match rhs {
-                    Expr::ConstBoolean(_, b) => Expr::ConstBoolean(sp, !b),
-                    _ => Expr::Not(sp, Box::new(rhs)),
+                    Expr::ConstBoolean(_, b) => Expr::ConstBoolean(loc, !b),
+                    _ => Expr::Not(loc, Box::new(rhs)),
                 }
             }
-            Expr::Ref(sp, rhs) => Expr::Ref(sp, Box::new(rhs.eval_const_inner(st, args))),
-            Expr::Neg(sp, rhs) => {
+            Expr::Ref(loc, rhs) => Expr::Ref(loc, Box::new(rhs.eval_const_inner(st, args))),
+            Expr::Neg(loc, rhs) => {
                 let rhs = rhs.eval_const_inner(st, args);
                 rhs.as_value()
                     .map(|v| v.neg().map(Expr::from).unwrap_or_else(Expr::from))
-                    .unwrap_or_else(|| Expr::Neg(sp, Box::new(rhs)))
+                    .unwrap_or_else(|| Expr::Neg(loc, Box::new(rhs)))
             }
-            Expr::Deref(sp, rhs) => Expr::Deref(sp, Box::new(rhs.eval_const_inner(st, args))),
-            Expr::Eq(sp, a, b, t) => try_binop(
-                sp,
+            Expr::Deref(loc, rhs) => Expr::Deref(loc, Box::new(rhs.eval_const_inner(st, args))),
+            Expr::Eq(loc, a, b, t) => try_binop(
+                loc,
                 a.eval_const_inner(st, args),
                 b.eval_const_inner(st, args),
                 |a, b| Ok(Value::Boolean(a.cmp_op(b, Ordering::Equal, false))),
-                |sp, a, b| Expr::Eq(sp, a, b, t),
+                |loc, a, b| Expr::Eq(loc, a, b, t),
             ),
-            Expr::Neq(sp, a, b, t) => try_binop(
-                sp,
+            Expr::Neq(loc, a, b, t) => try_binop(
+                loc,
                 a.eval_const_inner(st, args),
                 b.eval_const_inner(st, args),
                 |a, b| Ok(Value::Boolean(a.cmp_op(b, Ordering::Equal, true))),
-                |sp, a, b| Expr::Neq(sp, a, b, t),
+                |loc, a, b| Expr::Neq(loc, a, b, t),
             ),
-            Expr::Lt(sp, a, b, t) => try_binop(
-                sp,
+            Expr::Lt(loc, a, b, t) => try_binop(
+                loc,
                 a.eval_const_inner(st, args),
                 b.eval_const_inner(st, args),
                 |a, b| Ok(Value::Boolean(a.cmp_op(b, Ordering::Less, false))),
-                |sp, a, b| Expr::Lt(sp, a, b, t),
+                |loc, a, b| Expr::Lt(loc, a, b, t),
             ),
-            Expr::Lte(sp, a, b, t) => try_binop(
-                sp,
+            Expr::Lte(loc, a, b, t) => try_binop(
+                loc,
                 a.eval_const_inner(st, args),
                 b.eval_const_inner(st, args),
                 |a, b| Ok(Value::Boolean(a.cmp_op(b, Ordering::Greater, true))),
-                |sp, a, b| Expr::Lte(sp, a, b, t),
+                |loc, a, b| Expr::Lte(loc, a, b, t),
             ),
-            Expr::Gt(sp, a, b, t) => try_binop(
-                sp,
+            Expr::Gt(loc, a, b, t) => try_binop(
+                loc,
                 a.eval_const_inner(st, args),
                 b.eval_const_inner(st, args),
                 |a, b| Ok(Value::Boolean(a.cmp_op(b, Ordering::Greater, false))),
-                |sp, a, b| Expr::Gt(sp, a, b, t),
+                |loc, a, b| Expr::Gt(loc, a, b, t),
             ),
-            Expr::Gte(sp, a, b, t) => try_binop(
-                sp,
+            Expr::Gte(loc, a, b, t) => try_binop(
+                loc,
                 a.eval_const_inner(st, args),
                 b.eval_const_inner(st, args),
                 |a, b| Ok(Value::Boolean(a.cmp_op(b, Ordering::Less, true))),
-                |sp, a, b| Expr::Gte(sp, a, b, t),
+                |loc, a, b| Expr::Gte(loc, a, b, t),
             ),
-            Expr::Array(_sp, _) => todo!(),
-            Expr::StructConstructor(_sp, _) => todo!(),
-            Expr::Cast(_sp, _, _, _) => todo!(),
-            Expr::Block(sp, mut stmnts) => {
+            Expr::Array(_loc, _) => todo!(),
+            Expr::StructConstructor(_loc, _) => todo!(),
+            Expr::Cast(_loc, _, _, _) => todo!(),
+            Expr::Block(loc, mut stmnts) => {
                 let mut st = st.clone();
                 stmnts
                     .iter_mut()
                     .for_each(|stmnt| {
-                        *stmnt = match std::mem::replace(stmnt, Statement::Return(Span::default(), Expr::ConstUnit(Span::default()))) {
-                            Statement::Let(sp, n, t, e) => {
+                        *stmnt = match std::mem::replace(stmnt, Statement::Return(Location::default(), Expr::ConstUnit(Location::default()))) {
+                            Statement::Let(loc, n, t, e) => {
                                 let e = e.eval_const_inner(&mut st, args);
                                 st.add_var(n.clone(), e.clone());
-                                Statement::Let(sp, n, t, e)
+                                Statement::Let(loc, n, t, e)
                             }
-                            Statement::Var(sp, n, t, e) => {
+                            Statement::Var(loc, n, t, e) => {
                                 let e = e.eval_const_inner(&mut st, args);
                                 st.add_var(n.clone(), Expr::Ident(Default::default(), n.clone()));
-                                Statement::Var(sp, n, t, e)
+                                Statement::Var(loc, n, t, e)
                             }
-                            Statement::Rebind(sp, pl, e) => {
+                            Statement::Rebind(loc, pl, e) => {
                                 let pl = match pl {
-                                    PlaceExpr::Ident(sp, n) => {
+                                    PlaceExpr::Ident(loc, n) => {
                                         st.access(&n);
-                                        PlaceExpr::Ident(sp, n)
+                                        PlaceExpr::Ident(loc, n)
                                     }
-                                    PlaceExpr::Deref(sp, e) => PlaceExpr::Deref(sp, Box::new(e.eval_const_inner(&mut st, args))),
-                                    PlaceExpr::Index(_sp, e, i) => todo!("eval_const(index({e}, {i}))"),
-                                    PlaceExpr::FieldAccess(_sp, e, i) => todo!("eval_const(fieldaccess({e}, {i}))"),
+                                    PlaceExpr::Deref(loc, e) => PlaceExpr::Deref(loc, Box::new(e.eval_const_inner(&mut st, args))),
+                                    PlaceExpr::Index(_loc, e, i) => todo!("eval_const(index({e}, {i}))"),
+                                    PlaceExpr::FieldAccess(_loc, e, i) => todo!("eval_const(fieldaccess({e}, {i}))"),
                                 };
                                 let e = e.eval_const_inner(&mut st, args);
-                                Statement::Rebind(sp, pl, e)
+                                Statement::Rebind(loc, pl, e)
                             }
-                            Statement::Express(sp, t, e) => Statement::Express(sp, t, e.eval_const_inner(&mut st, args)),
-                            Statement::Return(sp, e) => Statement::Return(sp, e.eval_const_inner(&mut st, args)),
+                            Statement::Express(loc, t, e) => Statement::Express(loc, t, e.eval_const_inner(&mut st, args)),
+                            Statement::Return(loc, e) => Statement::Return(loc, e.eval_const_inner(&mut st, args)),
                         };
                 });
-                Expr::Block(sp, stmnts).remove_dead_bindings(st)
+                Expr::Block(loc, stmnts).remove_dead_bindings(st)
             }
         }
     }

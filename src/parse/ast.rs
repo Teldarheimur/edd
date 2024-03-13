@@ -3,26 +3,28 @@ use std::rc::Rc;
 
 use crate::ttype::Type;
 
-use super::span::Span;
+use super::location::Location;
 
 #[derive(Debug, Clone)]
 pub struct Program(pub Vec<(Rc<str>, Decl)>);
 
 #[derive(Debug, Clone)]
 pub enum Decl {
-    Static(Span, Box<(Type, Expr)>),
-    Const(Span, Box<(Type, Expr)>),
-    Fn(Span, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
+    Static(Location, Box<(Type, Expr)>),
+    Const(Location, Box<(Type, Expr)>),
+    Fn(Location, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
+    ExternStatic(Location, Box<Type>),
+    ExternFn(Location, Box<[(Rc<str>, Type)]>, Box<Type>),
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Express(Span, Expr),
-    Let(Span, Rc<str>, Option<Type>, Expr),
-    Var(Span, Rc<str>, Option<Type>, Expr),
-    Rebind(Span, PlaceExpr, Expr),
+    Express(Location, Expr),
+    Let(Location, Rc<str>, Option<Type>, Expr),
+    Var(Location, Rc<str>, Option<Type>, Expr),
+    Rebind(Location, PlaceExpr, Expr),
 
-    Return(Span, Expr),
+    Return(Location, Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -72,6 +74,21 @@ impl Display for Program {
                     }
                     write!(f, ") {ret} {body}")?;
                 }
+                Decl::ExternStatic(_, t) => {
+                    write!(f, "extern {name}: {t}")?;
+                }
+                Decl::ExternFn(_, args, ret) => {
+                    write!(f, "fn {name}(")?;
+                    let mut first = true;
+                    for (arg_n, arg_t) in &**args {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        first = false;
+                        write!(f, "{arg_n}: {arg_t}")?;
+                    }
+                    write!(f, ") {ret}")?;
+                }
             }
             writeln!(f)?;
         }
@@ -81,41 +98,41 @@ impl Display for Program {
 
 #[derive(Debug, Clone)]
 pub enum PlaceExpr {
-    Ident(Span, Rc<str>),
-    Deref(Span, Expr),
-    Index(Span, Expr, Expr),
-    FieldAccess(Span, Expr, Rc<str>),
+    Ident(Location, Rc<str>),
+    Deref(Location, Expr),
+    Index(Location, Expr, Expr),
+    FieldAccess(Location, Expr, Rc<str>),
 }
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Ident(Span, Rc<str>),
-    Const(Span, Literal),
-    Add(Span, Box<Self>, Box<Self>),
-    Sub(Span, Box<Self>, Box<Self>),
-    Mul(Span, Box<Self>, Box<Self>),
-    Div(Span, Box<Self>, Box<Self>),
-    Concat(Span, Box<Self>, Box<Self>),
+    Ident(Location, Rc<str>),
+    Const(Location, Literal),
+    Add(Location, Box<Self>, Box<Self>),
+    Sub(Location, Box<Self>, Box<Self>),
+    Mul(Location, Box<Self>, Box<Self>),
+    Div(Location, Box<Self>, Box<Self>),
+    Concat(Location, Box<Self>, Box<Self>),
 
-    Not(Span, Box<Self>),
-    Neg(Span, Box<Self>),
+    Not(Location, Box<Self>),
+    Neg(Location, Box<Self>),
 
-    Ref(Span, Box<Self>),
-    Deref(Span, Box<Self>),
-    Array(Span, Box<[Self]>),
-    StructConstructor(Span, Box<[(Option<Box<str>>, Expr)]>),
-    Cast(Span, Box<Self>, Type),
+    Ref(Location, Box<Self>),
+    Deref(Location, Box<Self>),
+    Array(Location, Box<[Self]>),
+    StructConstructor(Location, Box<[(Option<Box<str>>, Expr)]>),
+    Cast(Location, Box<Self>, Type),
 
-    Block(Span, Box<[Statement]>),
-    Lambda(Span, Box<[(Rc<str>, Option<Type>)]>, Option<Type>, Box<Self>),
-    Call(Span, Rc<str>, Box<[Self]>),
+    Block(Location, Box<[Statement]>),
+    Lambda(Location, Box<[(Rc<str>, Option<Type>)]>, Option<Type>, Box<Self>),
+    Call(Location, Rc<str>, Box<[Self]>),
 
-    If(Span, Box<Self>, Box<Self>, Box<Self>),
-    Eq(Span, Box<Self>, Box<Self>),
-    Neq(Span, Box<Self>, Box<Self>),
-    Lt(Span, Box<Self>, Box<Self>),
-    Lte(Span, Box<Self>, Box<Self>),
-    Gt(Span, Box<Self>, Box<Self>),
-    Gte(Span, Box<Self>, Box<Self>),
+    If(Location, Box<Self>, Box<Self>, Box<Self>),
+    Eq(Location, Box<Self>, Box<Self>),
+    Neq(Location, Box<Self>, Box<Self>),
+    Lt(Location, Box<Self>, Box<Self>),
+    Lte(Location, Box<Self>, Box<Self>),
+    Gt(Location, Box<Self>, Box<Self>),
+    Gte(Location, Box<Self>, Box<Self>),
 }
 
 impl Display for Expr {

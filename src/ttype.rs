@@ -2,7 +2,7 @@ use std::{collections::HashSet, fmt::{self, Display}, rc::Rc, result::Result as 
 
 use collect_result::CollectResult;
 
-use crate::parse::span::Span;
+use crate::parse::location::Location;
 
 use self::typevar::TypeVar;
 
@@ -91,7 +91,7 @@ impl Display for Type {
 #[derive(Debug, Clone)]
 pub struct TypeError {
     pub error_type: TypeErrorType,
-    pub span: Span,
+    pub loc: Location,
 }
 
 #[derive(Debug, Clone)]
@@ -112,10 +112,10 @@ pub enum TypeErrorType {
 }
 
 impl TypeErrorType {
-    fn span(self, span: Span) -> TypeError {
+    fn location(self, loc: Location) -> TypeError {
         TypeError {
             error_type: self,
-            span,
+            loc,
         }
     }
 }
@@ -123,7 +123,7 @@ impl TypeErrorType {
 impl Display for TypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use self::TypeErrorType::*;
-        write!(f, "{}: ", self.span)?;
+        write!(f, "{}: ", self.loc)?;
         match &self.error_type {
             TypeMismatch(e, a) => write!(f, "expected type {e}, got {a}"),
             InvalidOp(op, t) => write!(f, "operation {op} is invalid for type {t}"),
@@ -141,7 +141,7 @@ impl Display for TypeError {
     }
 }
 
-pub fn unify_types(span: Span, exp: Type, act: Type) -> Result<Type> {
+pub fn unify_types(loc: Location, exp: Type, act: Type) -> Result<Type> {
     use self::Type::*;
 
     match (exp, act) {
@@ -149,9 +149,9 @@ pub fn unify_types(span: Span, exp: Type, act: Type) -> Result<Type> {
         // scary type!!!
         (Opaque, _) | (_, Opaque) => Ok(Opaque),
         (Unknown(t1), Unknown(t2)) => {
-            Ok(Type::Unknown(t1.merge(span, &t2)?))
+            Ok(Type::Unknown(t1.merge(loc, &t2)?))
         }
-        (t, Unknown(tv)) | (Unknown(tv), t) => tv.merge_with_type(span, t),
+        (t, Unknown(tv)) | (Unknown(tv), t) => tv.merge_with_type(loc, t),
         (a @ I8, CompInteger) | (CompInteger, a @ I8) => Ok(a),
         (a @ U8, CompInteger) | (CompInteger, a @ U8) => Ok(a),
         (a @ I16, CompInteger) | (CompInteger, a @ I16) => Ok(a),
@@ -160,36 +160,36 @@ pub fn unify_types(span: Span, exp: Type, act: Type) -> Result<Type> {
         (a @ U32, CompInteger) | (CompInteger, a @ U32) => Ok(a),
         (Array(t1, s1), Array(t2, s2)) => {
             if s1 != s2 {
-                return Err(TypeErrorType::UnequalArraySizes(s1, s2).span(span));
+                return Err(TypeErrorType::UnequalArraySizes(s1, s2).location(loc));
             }
-            Ok(Array(Box::new(unify_types(span, *t1, *t2)?), s1))
+            Ok(Array(Box::new(unify_types(loc, *t1, *t2)?), s1))
         }
         (Function(t1, rt1), Function(t2, rt2)) => {
             if t1.len() != t2.len() {
                 return Err(TypeErrorType::UnequalArraySizes(
                     t1.len() as u16,
                     t2.len() as u16,
-                ).span(span));
+                ).location(loc));
             }
             let args: Vec<_> = t1
                 .into_vec()
                 .into_iter()
                 .zip(t2.into_vec().into_iter())
-                .map(|(t1, t2)| unify_types(span, t1, t2))
+                .map(|(t1, t2)| unify_types(loc.clone(), t1, t2))
                 .collect_result()?;
 
             Ok(Function(
                 args.into_boxed_slice(),
-                Box::new(unify_types(span, *rt1, *rt2)?),
+                Box::new(unify_types(loc, *rt1, *rt2)?),
             ))
         }
         (ArrayPointer(t1), ArrayPointer(t2)) => {
-            Ok(ArrayPointer(Box::new(unify_types(span, *t1, *t2)?)))
+            Ok(ArrayPointer(Box::new(unify_types(loc, *t1, *t2)?)))
         }
-        (Pointer(t1), Pointer(t2)) => Ok(Pointer(Box::new(unify_types(span, *t1, *t2)?))),
-        (Option(t1), Option(t2)) => Ok(Option(Box::new(unify_types(span, *t1, *t2)?))),
-        (Slice(t1), Slice(t2)) => Ok(Slice(Box::new(unify_types(span, *t1, *t2)?))),
+        (Pointer(t1), Pointer(t2)) => Ok(Pointer(Box::new(unify_types(loc, *t1, *t2)?))),
+        (Option(t1), Option(t2)) => Ok(Option(Box::new(unify_types(loc, *t1, *t2)?))),
+        (Slice(t1), Slice(t2)) => Ok(Slice(Box::new(unify_types(loc, *t1, *t2)?))),
         (Struct(_), Struct(_)) => todo!(),
-        (t1, t2) => Err(TypeErrorType::TypeMismatch(t1, t2).span(span)),
+        (t1, t2) => Err(TypeErrorType::TypeMismatch(t1, t2).location(loc)),
     }
 }

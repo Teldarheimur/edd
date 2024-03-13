@@ -154,7 +154,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
 
             state.add_code(Line::SetBinop(place, t, Binop::Mul, ta, tb));
         }
-        Expr::Div(sp, a, b) => {
+        Expr::Div(loc, a, b) => {
             let ta = state.new_temp("div_arg1", t.clone());
             flatten_expr(*a, t.clone(), ta.clone(), state);
             let tb = state.new_temp("div_arg2", t.clone());
@@ -172,7 +172,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
 
             state.add_code(Line::If(is_zero, error_l.clone(), safe_l.clone()));
             state.add_code(Line::Label(error_l));
-            state.add_code(Line::Panic(format!(":{}:{}: divended was zero", sp.line_start, sp.col_start).into()));
+            state.add_code(Line::Panic(format!(":{}:{}: divended was zero", loc.line_start, loc.col_start).into()));
             state.add_code(Line::Label(safe_l));
             state.add_code(Line::SetBinop(place, t, Binop::Div, ta, tb));
         }

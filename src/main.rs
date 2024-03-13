@@ -1,55 +1,49 @@
 use edd::{
-    flat::{flatten, FlatType, Program}, parse::parse, rt::{
+    compile, flat::Program, rt::{
         run, RuntimeError, SymbolTable, Value
-    }, ttype::{
-        stab::SymbolTable as SymbolTypes, type_checker::check_program, Type
-    }
+    }, CompileOptions
 };
+use clap::Parser;
 
-use std::{env::args_os, fs::File, io::Read, path::Path};
+use std::path::PathBuf;
+
+#[derive(Debug, Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(long)]
+    /// Emit untyped parsed AST
+    emit_untyped: bool,
+    #[arg(long)]
+    /// Emit type checked AST
+    emit_typed: bool,
+
+    #[arg()]
+    /// Root source code file
+    path: PathBuf,
+}
 
 fn main() {
-    let path = args_os().nth(1).expect("input file");
-    let path = Path::new(&path);
+    let args = Args::parse();
 
-    let program = {
-        let mut file = File::open(path).unwrap();
-        let mut s = String::new();
-        file.read_to_string(&mut s).unwrap();
-        match parse(&s) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Syntax error\n{}:{e}", path.display());
-                return;
-            }
-        }
-    };
-    println!("Parsed:");
-    println!("{program}");
-    println!();
+    let mut opt = CompileOptions::default();
+    if args.emit_typed {
+        opt = opt.hook_parsed(|p| {
+            println!("Parsed:\n{p}\n");
+        });
+    }
+    if args.emit_untyped {
+        opt = opt.hook_type_checked(|p| {
+            println!("Type checked:\n{p}\n");
+        });
+    }
 
-    let stab = {
-        let mut stab = SymbolTypes::new();
-        stab.add(false, "puts", Type::Function(Box::new([Type::Slice(Box::new(Type::Byte))]), Box::new(Type::Unit)));
-        stab.add(false, "putint", Type::Function(Box::new([Type::I32]), Box::new(Type::Unit)));
-        stab
-    };
-
-    let program = match check_program(program, &stab) {
+    let program = match compile(&args.path, opt) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Type error\n{}:{e}", path.display());
+            eprintln!("Compiler error: {e}");
             return;
         }
     };
-    println!("Type checked:");
-    println!("{program}");
-    println!();
-
-    let program = flatten(program, vec![
-        ("puts".into(), FlatType::FnPtr(Box::new([FlatType::Ptr(Some(Box::new(FlatType::U8)))]), Box::new(FlatType::Unit))),
-        ("putint".into(), FlatType::FnPtr(Box::new([FlatType::I32]), Box::new(FlatType::Unit))),
-    ]);
     println!("Flattened:");
     println!("{program}");
     println!();
@@ -57,7 +51,7 @@ fn main() {
     match run_prgm(program) {
         Ok(Value::Naught) => (),
         Ok(v) => println!("Returned {v}"),
-        Err(RuntimeError::Panic(msg)) => eprintln!("Error: Panic {}{msg}", path.display()),
+        Err(RuntimeError::Panic(msg)) => eprintln!("Error: Panic {}{msg}", args.path.display()),
         Err(RuntimeError::InvalidMain) => eprintln!("Error: Invalid main function"),
     }
 }
