@@ -1,0 +1,15 @@
+include("std.ðs");
+
+const A: i16 = 10;
+
+fn test() i16 {
+    let a = 5;
+    let b = 124;
+    let c = a + A;
+    let d = c + b;
+    5
+}
+
+fn main() unit {
+    test();
+}

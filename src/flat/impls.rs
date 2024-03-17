@@ -223,7 +223,7 @@ impl Display for DisplayLine<'_> {
             ),
             Line::SetAddrOf(dest, t, src) => write!(
                 f,
-                "{} = *{t} &{}",
+                "{} = {t} &{}",
                 dest.display_with(locals),
                 src.display_with(locals)
             ),

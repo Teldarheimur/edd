@@ -310,7 +310,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             b,
             |l, a, b| (l, a, b),
             state,
-            Type::constrained(Type::SIMPLE),
+            Type::constrained(Type::NUM),
         )
         .map(|(t, (l, a, b))| (Type::Bool, Expr::Eq(l, a, b, Box::new(t)))),
         UntypedExpr::Neq(loc, a, b) => check_binop_expr(
@@ -319,7 +319,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             b,
             |l, a, b| (l, a, b),
             state,
-            Type::constrained(Type::SIMPLE),
+            Type::constrained(Type::NUM),
         )
         .map(|(t, (l, a, b))| (Type::Bool, Expr::Neq(l, a, b, Box::new(t)))),
         UntypedExpr::Lte(loc, a, b) => check_binop_expr(
@@ -328,7 +328,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             b,
             |l, a, b| (l, a, b),
             state,
-            Type::constrained(Type::SIMPLE),
+            Type::constrained(Type::NUM),
         )
         .map(|(t, (l, a, b))| (Type::Bool, Expr::Lte(l, a, b, Box::new(t)))),
         UntypedExpr::Lt(loc, a, b) => check_binop_expr(
@@ -337,7 +337,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             b,
             |l, a, b| (l, a, b),
             state,
-            Type::constrained(Type::SIMPLE),
+            Type::constrained(Type::NUM),
         )
         .map(|(t, (l, a, b))| (Type::Bool, Expr::Lt(l, a, b, Box::new(t)))),
         UntypedExpr::Gt(loc, a, b) => check_binop_expr(
@@ -346,7 +346,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             b,
             |l, a, b| (l, a, b),
             state,
-            Type::constrained(Type::SIMPLE),
+            Type::constrained(Type::NUM),
         )
         .map(|(t, (l, a, b))| (Type::Bool, Expr::Gt(l, a, b, Box::new(t)))),
         UntypedExpr::Gte(loc, a, b) => check_binop_expr(
@@ -355,7 +355,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             b,
             |l, a, b| (l, a, b),
             state,
-            Type::constrained(Type::SIMPLE),
+            Type::constrained(Type::NUM),
         )
         .map(|(t, (l, a, b))| (Type::Bool, Expr::Gte(l, a, b, Box::new(t)))),
 

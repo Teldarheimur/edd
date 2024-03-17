@@ -1,7 +1,7 @@
 use clap::Parser;
 use edd::{
     compile,
-    flat::Program,
+    flat::{passes::{const_prop_pass, dead_path_removal_pass, dead_removal_pass, Pass}, Program},
     rt::{run, RuntimeError, SymbolTable, Value},
     CompileOptions,
 };
@@ -18,10 +18,19 @@ struct Args {
     /// Emit type checked AST
     emit_typed: bool,
 
+    #[arg(short='O', long)]
+    optimised: bool,
+
     #[arg()]
     /// Root source code file
     path: PathBuf,
 }
+
+const STD_OPTIMISATIONS: &[Pass] = &[
+    const_prop_pass,
+    dead_removal_pass,
+    dead_path_removal_pass,
+];
 
 fn main() {
     let args = Args::parse();
@@ -38,13 +47,20 @@ fn main() {
         });
     }
 
-    let program = match compile(&args.path, opt) {
+    let mut program = match compile(&args.path, opt) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Compiler error: {e}");
             return;
         }
     };
+
+    if args.optimised {
+        program = STD_OPTIMISATIONS
+            .iter()
+            .fold(program, |program, pass| pass(program));
+    }
+
     println!("Flattened:");
     println!("{program}");
     println!();

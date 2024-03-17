@@ -6,6 +6,7 @@ mod flat_codegen;
 mod impls;
 mod static_eval;
 mod ticker;
+pub mod passes;
 
 use self::{
     flat_codegen::{flatten_function, flatten_type},
