@@ -199,7 +199,7 @@ fn check_literal(loc: Location, lit: &UntypedLiteral) -> (Type, Expr) {
         &UntypedLiteral::Float(f) => (Type::Float, Expr::ConstFloat(loc, f)),
         &UntypedLiteral::Boolean(b) => (Type::Bool, Expr::ConstBoolean(loc, b)),
         &UntypedLiteral::Unit => (Type::Unit, Expr::ConstUnit(loc)),
-        UntypedLiteral::String(s) => (Type::CompString, Expr::ConstString(loc, s.clone())),
+        UntypedLiteral::String(s) => (Type::Array(Box::new(Type::Byte), s.len() as u16), Expr::ConstString(loc, s.clone())),
     }
 }
 
@@ -247,11 +247,13 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
         UntypedExpr::Concat(loc, a, b) => {
             let (ta, ea) = check_expr(a, state)?;
             let (tb, eb) = check_expr(b, state)?;
-            match unify_types(loc.clone(), ta, tb)? {
-                Type::CompString => {
-                    Ok((Type::CompString, Expr::Concat(loc.clone(), Box::new(ea), Box::new(eb))))
+            match (ta, tb) {
+                (Type::Array(ta, sz1), Type::Array(tb, sz2)) => {
+                    let t = unify_types(loc.clone(), *ta, *tb)?;
+
+                    Ok((Type::Array(Box::new(t), sz1+sz2), Expr::Concat(loc.clone(), Box::new(ea), Box::new(eb))))
                 }
-                t => Err(TypeErrorType::InvalidOp("concat", t).location(loc.clone())),
+                (t1, t2) => Err(TypeErrorType::InvalidConcatOps(t1, t2).location(loc.clone())),
             }
         }
         UntypedExpr::If(loc, c, i_t, i_f) => {
@@ -300,9 +302,13 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
                 .zip(t_args.iter().cloned())
                 .map(|(e, ta)| {
                     let (t, e) = check_expr(e, state)?;
-                    let _t = unify_types(loc.clone(), ta, t)?;
+                    let at = unify_types(loc.clone(), ta, t.clone())?;
+                    if at != t {
+                        Ok(Expr::Cast(loc.clone(), Box::new(e), Box::new(t), Box::new(at)))
+                    } else {
+                        Ok(e)
+                    }
 
-                    Ok(e)
                 })
                 .collect_result()?;
 

@@ -29,7 +29,6 @@ pub fn concretise_type(loc: Location, t: &mut Type) -> Result<()> {
         | Type::I16
         | Type::U32
         | Type::I32
-        | Type::CompString
         | Type::Float
         | Type::Unit => Ok(()),
     }

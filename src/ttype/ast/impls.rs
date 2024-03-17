@@ -143,8 +143,8 @@ impl Display for Expr {
                 }
                 write!(f, "}}")
             }
-            Expr::Cast(_, val, ft, tt) => write!(f, "({val} as {tt} (<-{ft})"),
-           Expr::Block(_, stmnts) => {
+            Expr::Cast(_, val, ft, tt) => write!(f, "({val} as {tt} (<-{ft}))"),
+            Expr::Block(_, stmnts) => {
                 writeln!(f, "{{")?;
                 let mut first = true;
                 for s in stmnts.iter() {

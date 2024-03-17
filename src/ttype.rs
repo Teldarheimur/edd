@@ -26,7 +26,6 @@ pub enum Type {
     I16,
     U32,
     I32,
-    CompString,
 
     /// limited support
     Float,
@@ -92,14 +91,13 @@ impl Display for Type {
             Type::I16 => write!(f, "i16"),
             Type::U32 => write!(f, "u32"),
             Type::I32 => write!(f, "i32"),
-            Type::CompString => write!(f, "comp_string"),
             Type::Float => write!(f, "float"),
             Type::Unit => write!(f, "unit"),
             Type::Option(t) => write!(f, "?{t}"),
             Type::Pointer(t) => write!(f, "*{t}"),
             Type::ArrayPointer(t) => write!(f, "[*]{t}"),
             Type::Slice(t) => write!(f, "[]{t}"),
-            Type::Array(t, n) => write!(f, "[{n}][{t}]"),
+            Type::Array(t, n) => write!(f, "[{n}]{t}"),
             Type::Function(args, ret) => {
                 write!(f, "fn(")?;
                 let mut first = true;
@@ -127,7 +125,7 @@ pub struct TypeError {
 pub enum TypeErrorType {
     /// expected, actual
     TypeMismatch(Type, Type),
-    InvalidOp(&'static str, Type),
+    InvalidConcatOps(Type, Type),
     CannotDeref(Type),
     Undefined(Box<str>),
     NotMutable(Box<str>),
@@ -155,7 +153,7 @@ impl Display for TypeError {
         write!(f, "{}: ", self.loc)?;
         match &self.error_type {
             TypeMismatch(e, a) => write!(f, "expected type {e}, got {a}"),
-            InvalidOp(op, t) => write!(f, "operation {op} is invalid for type {t}"),
+            InvalidConcatOps(t1, t2) => write!(f, "concatenation of {t1} and {t2} is not possible"),
             CannotDeref(t) => write!(f, "cannot dereference type {t}"),
             Undefined(v) => write!(f, "undefined variable {v}"),
             NotMutable(v) => write!(f, "invalid re-assigment of non-mutable variable {v}"),
@@ -181,6 +179,10 @@ pub fn unify_types(loc: Location, exp: Type, act: Type) -> Result<Type> {
             Ok(Type::Unknown(t1.merge(loc, &t2)?))
         }
         (t, Unknown(tv)) | (Unknown(tv), t) => tv.merge_with_type(loc, t),
+        (Array(t1, _), Slice(t2)) |
+        (Slice(t1), Array(t2, _)) => {
+            Ok(Slice(Box::new(unify_types(loc, *t1, *t2)?)))
+        }
         (Array(t1, s1), Array(t2, s2)) => {
             if s1 != s2 {
                 return Err(TypeErrorType::UnequalArraySizes(s1, s2).location(loc));

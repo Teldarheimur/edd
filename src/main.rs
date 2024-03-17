@@ -26,12 +26,12 @@ fn main() {
     let args = Args::parse();
 
     let mut opt = CompileOptions::default();
-    if args.emit_typed {
+    if args.emit_untyped {
         opt = opt.hook_parsed(|p| {
             println!("Parsed:\n{p}\n");
         });
     }
-    if args.emit_untyped {
+    if args.emit_typed {
         opt = opt.hook_type_checked(|p| {
             println!("Type checked:\n{p}\n");
         });

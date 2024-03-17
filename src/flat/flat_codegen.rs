@@ -23,7 +23,6 @@ fn flatten_type_maybe(t: Type) -> Option<FlatType> {
     Some(match t {
         Type::Unknown(_) => unimplemented!(),
         Type::Opaque => return None,
-        Type::CompString => unimplemented!(),
         Type::Unit => FlatType::Unit,
         Type::Bool => FlatType::Bool,
         Type::Byte => FlatType::U8,
@@ -142,6 +141,15 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
 
             match (from_t, to_t) {
                 (t1, t2) if t1 == t2 => flatten_expr(*e, t1, place, state),
+                (FlatType::Arr(t, _sz), FlatType::Struct(st)) |
+                (FlatType::Struct(st), FlatType::Arr(t, _sz)) => {
+                    if *st != [FlatType::Ptr(Some(t)), FlatType::U16] {
+                        unimplemented!()
+                    }
+
+                    flatten_expr(*e, FlatType::Struct(st), place, state);
+                    // TODO: write size to slice
+                }
                 _ => todo!(),
             }
         },
