@@ -269,12 +269,12 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             check_binop_expr(loc, a, b, Expr::Div, state, Type::constrained(Type::NUM))
         }
         UntypedExpr::Neg(loc, e) => {
-            let t = Type::constrained(Type::NUM);
+            let t = Type::constrained(Type::SIGNED);
             let e = check_expr_as(e, state, t.clone())?;
             Ok((t, Expr::Neg(loc.clone(), Box::new(e))))
         }
         UntypedExpr::Not(loc, e) => {
-            let t = Type::constrained(Type::SIMPLE);
+            let t = Type::constrained(Type::BITS);
             let e = check_expr_as(e, state, t.clone())?;
             Ok((t, Expr::Not(loc.clone(), Box::new(e))))
         }

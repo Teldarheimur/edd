@@ -62,6 +62,12 @@ impl Type {
         Type::I32,
         Type::U32,
     ];
+    const SIGNED: [Type; 4] = [
+        Type::Float,
+        Type::I8,
+        Type::I16,
+        Type::I32,
+    ];
     const NUM: [Type; 7] = [
         Type::Float,
         Type::I8,
@@ -71,9 +77,8 @@ impl Type {
         Type::I32,
         Type::U32,
     ];
-    const SIMPLE: [Type; 8] = [
+    const BITS: [Type; 7] = [
         Type::Bool,
-        Type::Float,
         Type::I8,
         Type::U8,
         Type::I16,
