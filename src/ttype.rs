@@ -168,11 +168,11 @@ impl Display for TypeError {
     }
 }
 
-pub fn unify_types(loc: Location, exp: Type, act: Type) -> Result<Type> {
+pub fn unify_types(loc: &Location, exp: &Type, act: &Type) -> Result<Type> {
     use self::Type::*;
 
     match (exp, act) {
-        (a, b) if a == b => Ok(a),
+        (a, b) if a == b => Ok(a.clone()),
         // scary type!!!
         (Opaque, _) | (_, Opaque) => Ok(Opaque),
         (Unknown(t1), Unknown(t2)) => {
@@ -181,40 +181,39 @@ pub fn unify_types(loc: Location, exp: Type, act: Type) -> Result<Type> {
         (t, Unknown(tv)) | (Unknown(tv), t) => tv.merge_with_type(loc, t),
         (Array(t1, _), Slice(t2)) |
         (Slice(t1), Array(t2, _)) => {
-            Ok(Slice(Box::new(unify_types(loc, *t1, *t2)?)))
+            Ok(Slice(Box::new(unify_types(loc, t1, t2)?)))
         }
         (Array(t1, s1), Array(t2, s2)) => {
             if s1 != s2 {
-                return Err(TypeErrorType::UnequalArraySizes(s1, s2).location(loc));
+                return Err(TypeErrorType::UnequalArraySizes(*s1, *s2).location(loc.clone()));
             }
-            Ok(Array(Box::new(unify_types(loc, *t1, *t2)?), s1))
+            Ok(Array(Box::new(unify_types(loc, t1, t2)?), *s1))
         }
         (Function(t1, rt1), Function(t2, rt2)) => {
             if t1.len() != t2.len() {
                 return Err(TypeErrorType::UnequalArraySizes(
                     t1.len() as u16,
                     t2.len() as u16,
-                ).location(loc));
+                ).location(loc.clone()));
             }
             let args: Vec<_> = t1
-                .into_vec()
-                .into_iter()
-                .zip(t2.into_vec().into_iter())
-                .map(|(t1, t2)| unify_types(loc.clone(), t1, t2))
+                .iter()
+                .zip(t2.iter())
+                .map(|(t1, t2)| unify_types(loc, t1, t2))
                 .collect_result()?;
 
             Ok(Function(
                 args.into_boxed_slice(),
-                Box::new(unify_types(loc, *rt1, *rt2)?),
+                Box::new(unify_types(loc, rt1, rt2)?),
             ))
         }
         (ArrayPointer(t1), ArrayPointer(t2)) => {
-            Ok(ArrayPointer(Box::new(unify_types(loc, *t1, *t2)?)))
+            Ok(ArrayPointer(Box::new(unify_types(loc, t1, t2)?)))
         }
-        (Pointer(t1), Pointer(t2)) => Ok(Pointer(Box::new(unify_types(loc, *t1, *t2)?))),
-        (Option(t1), Option(t2)) => Ok(Option(Box::new(unify_types(loc, *t1, *t2)?))),
-        (Slice(t1), Slice(t2)) => Ok(Slice(Box::new(unify_types(loc, *t1, *t2)?))),
+        (Pointer(t1), Pointer(t2)) => Ok(Pointer(Box::new(unify_types(loc, t1, t2)?))),
+        (Option(t1), Option(t2)) => Ok(Option(Box::new(unify_types(loc, t1, t2)?))),
+        (Slice(t1), Slice(t2)) => Ok(Slice(Box::new(unify_types(loc, t1, t2)?))),
         (Struct(_), Struct(_)) => todo!(),
-        (t1, t2) => Err(TypeErrorType::TypeMismatch(t1, t2).location(loc)),
+        (t1, t2) => Err(TypeErrorType::TypeMismatch(t1.clone(), t2.clone()).location(loc.clone())),
     }
 }

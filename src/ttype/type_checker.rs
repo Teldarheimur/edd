@@ -53,15 +53,15 @@ pub fn check_program(Prgm(decls): Prgm) -> Result<Program> {
             UntypedDecl::Static(loc, b) => {
                 let (et, e) = *b;
                 let (at, e) = check_expr(&e, &stab)?;
-                let t = unify_types(loc.clone(), et, at)?;
-                let t = stab.specify(loc.clone(), &name, t)?;
+                let t = unify_types(&loc, &et, &at)?;
+                let t = stab.specify(&loc, &name, &t)?;
                 new_decls.push((name, Decl::Static(loc, Box::new((t, e)))));
             },
             UntypedDecl::Const(loc, b) => {
                 let (et, e) = *b;
                 let (at, e) = check_expr(&e, &stab)?;
-                let t = unify_types(loc.clone(), et, at)?;
-                let t = stab.specify(loc.clone(), &name, t)?;
+                let t = unify_types(&loc, &et, &at)?;
+                let t = stab.specify(&loc, &name, &t)?;
                 new_decls.push((name, Decl::Const(loc, Box::new((t, e)))));
             },
             UntypedDecl::Fn(loc, args, b) => {
@@ -73,7 +73,7 @@ pub fn check_program(Prgm(decls): Prgm) -> Result<Program> {
 
                     let (et, e) = *b;
                     let (at, e) = check_expr(&e, &stab)?;
-                    let t = unify_types(loc.clone(), et, at)?;
+                    let t = unify_types(&loc, &et, &at)?;
 
                     (t, e)
                 };
@@ -138,19 +138,19 @@ fn check_statements(
             }
             UntypedStatement::Let(loc, n, t, e) => {
                 let (ct, e) = check_expr(&e, state)?;
-                let t = unify_types(loc.clone(), t.unwrap_or_else(Type::any), ct)?;
+                let t = unify_types(&loc, &t.unwrap_or_else(Type::any), &ct)?;
                 state.add(false, n.clone(), t.clone());
                 stmnts.push(Statement::Let(loc, n, Box::new(t), e));
             }
             UntypedStatement::Var(loc, n, t, e) => {
                 let (ct, e) = check_expr(&e, state)?;
-                let t = unify_types(loc.clone(), t.unwrap_or_else(Type::any), ct)?;
+                let t = unify_types(&loc, &t.unwrap_or_else(Type::any), &ct)?;
                 state.add(true, n.clone(), t.clone());
                 stmnts.push(Statement::Var(loc, n, Box::new(t), e));
             }
             UntypedStatement::Rebind(loc, UntypedPle::Ident(loc2, n), e) => {
                 let (t, e) = check_expr(&e, state)?;
-                let _t = state.mutate(loc.clone(), &n, t)?;
+                let _t = state.mutate(&loc, &n, &t)?;
                 stmnts.push(Statement::Rebind(loc, PlaceExpr::Ident(loc2, n), e));
             }
             UntypedStatement::Rebind(loc, UntypedPle::Deref(loc2, ptr_e), e) => {
@@ -159,7 +159,7 @@ fn check_statements(
                 let Type::Pointer(inner_t) = ptr_t else {
                     return Err(TypeErrorType::NotPtr(ptr_t).location(loc));
                 };
-                let t = unify_types(loc.clone(), t, *inner_t)?;
+                let t = unify_types(&loc, &t, &inner_t)?;
                 stmnts.push(Statement::Rebind(loc, PlaceExpr::Deref(loc2, Box::new(ptr_e), Box::new(t)), e));
             }
             UntypedStatement::Rebind(_loc, UntypedPle::Index(_loc2, arr_e, ind_e), e) => todo!("check Index({arr_e}, {ind_e}), {e})"),
@@ -167,7 +167,7 @@ fn check_statements(
             UntypedStatement::Return(loc, e) => {
                 let (t, e) = check_expr(&e, state)?;
                 if let Some(ret_t) = ret.take() {
-                    *ret = Some(unify_types(loc.clone(), ret_t, t)?);
+                    *ret = Some(unify_types(&loc, &ret_t, &t)?);
                 } else {
                     *ret = Some(t);
                 }
@@ -206,7 +206,7 @@ fn check_literal(loc: Location, lit: &UntypedLiteral) -> (Type, Expr) {
 fn check_expr_as(expr: &UntypedExpr, state: &SymbolTable, expected_type: Type) -> Result<Expr> {
     let (t, e) = check_expr(expr, state)?;
     let loc = e.location();
-    let unified_type = unify_types(loc.clone(), expected_type, t.clone())?;
+    let unified_type = unify_types(&loc, &expected_type, &t)?;
     if t != unified_type {
         Ok(Expr::Cast(loc, Box::new(e), Box::new(t), Box::new(unified_type)))
     } else {
@@ -249,7 +249,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             let (tb, eb) = check_expr(b, state)?;
             match (ta, tb) {
                 (Type::Array(ta, sz1), Type::Array(tb, sz2)) => {
-                    let t = unify_types(loc.clone(), *ta, *tb)?;
+                    let t = unify_types(&loc, &ta, &tb)?;
 
                     Ok((Type::Array(Box::new(t), sz1+sz2), Expr::Concat(loc.clone(), Box::new(ea), Box::new(eb))))
                 }
@@ -258,10 +258,10 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
         }
         UntypedExpr::If(loc, c, i_t, i_f) => {
             let (tc, ec) = check_expr(c, state)?;
-            unify_types(loc.clone(), Type::Bool, tc)?;
+            unify_types(&loc, &Type::Bool, &tc)?;
             let (tt, et) = check_expr(i_t, state)?;
             let (tf, ef) = check_expr(i_f, state)?;
-            let t = unify_types(loc.clone(), tt, tf)?;
+            let t = unify_types(&loc, &tt, &tf)?;
             Ok((t, Expr::If(loc.clone(), Box::new(ec), Box::new(et), Box::new(ef))))
         }
         UntypedExpr::Eq(loc, a, b) => check_binop_expr(loc, a, b, |l, a, b| (l, a, b), state, Type::constrained(Type::SIMPLE))
@@ -302,7 +302,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
                 .zip(t_args.iter().cloned())
                 .map(|(e, ta)| {
                     let (t, e) = check_expr(e, state)?;
-                    let at = unify_types(loc.clone(), ta, t.clone())?;
+                    let at = unify_types(loc, &ta, &t)?;
                     if at != t {
                         Ok(Expr::Cast(loc.clone(), Box::new(e), Box::new(t), Box::new(at)))
                     } else {
@@ -332,8 +332,16 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
                 stab.add(false, name.clone(), ty.clone());
             }
 
+            let any;
+            let ret = match ret {
+                Some(r) => r,
+                None => {
+                    any = Type::any();
+                    &any
+                }
+            };
             let (bt, be) = check_expr(body, &stab)?;
-            let rt = unify_types(loc.clone(), ret.clone().unwrap_or_else(Type::any), bt)?;
+            let rt = unify_types(loc, ret, &bt)?;
 
             Ok((
                 Type::Function(targs, Box::new(rt.clone())),

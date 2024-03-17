@@ -42,19 +42,19 @@ impl SymbolTable {
     pub fn lookup(&self, name: &str) -> Result<Type, TypeErrorType> {
         self.lookup_raw(name).map(|sym| sym.s_type)
     }
-    pub fn specify(&mut self, loc: Location, name: &str, t: Type) -> Result<Type> {
-        let et = self.map.get(name).cloned().unwrap().s_type;
+    pub fn specify(&mut self, loc: &Location, name: &str, t: &Type) -> Result<Type> {
+        let et = &self.map.get(name).unwrap().s_type;
         let ut = unify_types(loc, et, t)?;
         self.map.get_mut(name).unwrap().s_type = ut.clone();
 
         Ok(ut)
     }
-    pub fn mutate(&mut self, loc: Location, name: &str, t: Type) -> Result<Type> {
-        let Some(Symbol { s_type, mutable }) = self.map.get(name).cloned() else {
-            return Err(TypeErrorType::Undefined(name.into()).location(loc));
+    pub fn mutate(&mut self, loc: &Location, name: &str, t: &Type) -> Result<Type> {
+        let Some(Symbol { s_type, mutable }) = self.map.get(name) else {
+            return Err(TypeErrorType::Undefined(name.into()).location(loc.clone()));
         };
         if !mutable {
-            return Err(TypeErrorType::NotMutable(name.into()).location(loc));
+            return Err(TypeErrorType::NotMutable(name.into()).location(loc.clone()));
         }
         let ut = unify_types(loc, t, s_type)?;
         self.map.get_mut(name).unwrap().s_type = ut.clone();

@@ -62,26 +62,26 @@ impl TypeVar {
             Inner::Alias(tv) => tv.clone().concretise(),
         }
     }
-    pub fn merge_with_type(&self, loc: Location, t: Type) -> Result<Type> {
+    pub fn merge_with_type(&self, loc: &Location, t: &Type) -> Result<Type> {
         let brw = RefCell::borrow(&self.inner);
         let t = match &*brw {
             Inner::Alias(tv) => return tv.merge_with_type(loc, t),
-            Inner::Any => t,
+            Inner::Any => t.clone(),
             Inner::Constrained(set) => {
                 if set.contains(&t) {
-                    t
+                    t.clone()
                 } else {
                     todo!("error type {t} \\not\\in {set:?}");
                 }
             }
-            Inner::Concrete(ct) => unify_types(loc, ct.clone(), t)?,
+            Inner::Concrete(ct) => unify_types(loc, ct, t)?,
         };
         drop(brw);
 
         *RefCell::borrow_mut(&self.inner) = Inner::Concrete(t.clone());
         Ok(t)
     }
-    pub fn merge(&self, loc: Location, other: &Self) -> Result<Self> {
+    pub fn merge(&self, loc: &Location, other: &Self) -> Result<Self> {
         if self == other {
             // This is both an optimisation and to prevent panics
             // from branches that borrow_mut on both
@@ -114,7 +114,7 @@ impl TypeVar {
                 Ok(other.clone())
             }
             (Inner::Concrete(t1), Inner::Concrete(t2)) => {
-                let t = unify_types(loc, t1.clone(), t2.clone())?;
+                let t = unify_types(loc, t1, t2)?;
                 drop((s, o));
                 *RefCell::borrow_mut(&self.inner) = Inner::Concrete(t);
                 *RefCell::borrow_mut(&other.inner) = Inner::Alias(self.clone());
@@ -141,7 +141,7 @@ impl TypeVar {
             (Inner::Constrained(set1), Inner::Constrained(set2)) => {
                 let setu = set1 & set2;
                 match setu.len() {
-                    0 => Err(TypeErrorType::DisjointContraints(set1.clone(), set2.clone()).location(loc)),
+                    0 => Err(TypeErrorType::DisjointContraints(set1.clone(), set2.clone()).location(loc.clone())),
                     1 => {
                         drop((s, o));
                         let ft = setu.into_iter().next().unwrap();
