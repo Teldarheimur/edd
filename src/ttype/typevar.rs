@@ -1,5 +1,10 @@
 use std::{
-    cell::RefCell, collections::HashSet, fmt::{self, Display}, hash::{Hash, Hasher}, ptr, rc::Rc
+    cell::RefCell,
+    collections::HashSet,
+    fmt::{self, Display},
+    hash::{Hash, Hasher},
+    ptr,
+    rc::Rc,
 };
 
 use crate::parse::location::Location;
@@ -25,7 +30,7 @@ pub struct TypeVar {
 impl TypeVar {
     pub fn any_type() -> Self {
         TypeVar {
-            inner: Rc::new(RefCell::new(Inner::Any))
+            inner: Rc::new(RefCell::new(Inner::Any)),
         }
     }
     pub fn constrained_type<I: IntoIterator<Item = Type>>(possible_types: I) -> Self {
@@ -34,13 +39,13 @@ impl TypeVar {
         if possible_types.len() == 1 {
             return TypeVar {
                 inner: Rc::new(RefCell::new(Inner::Concrete(
-                    possible_types.into_iter().next().unwrap()
-                )))
-            }
+                    possible_types.into_iter().next().unwrap(),
+                ))),
+            };
         }
 
         TypeVar {
-            inner: Rc::new(RefCell::new(Inner::Constrained(possible_types)))
+            inner: Rc::new(RefCell::new(Inner::Constrained(possible_types))),
         }
     }
     pub fn concretise(self) -> Result<Type, TypeErrorType> {
@@ -56,8 +61,10 @@ impl TypeVar {
                         return Err(TypeErrorType::NonConcreteType);
                     }
                 }
-                arr.get(index).cloned().ok_or(TypeErrorType::NonConcreteType)
-            },
+                arr.get(index)
+                    .cloned()
+                    .ok_or(TypeErrorType::NonConcreteType)
+            }
             Inner::Any => Err(TypeErrorType::NonConcreteType),
             Inner::Alias(tv) => tv.clone().concretise(),
         }
@@ -68,7 +75,7 @@ impl TypeVar {
             Inner::Alias(tv) => return tv.merge_with_type(loc, t),
             Inner::Any => t.clone(),
             Inner::Constrained(set) => {
-                if set.contains(&t) {
+                if set.contains(t) {
                     t.clone()
                 } else {
                     todo!("error type {t} \\not\\in {set:?}");
@@ -85,7 +92,7 @@ impl TypeVar {
         if self == other {
             // This is both an optimisation and to prevent panics
             // from branches that borrow_mut on both
-            return Ok(self.clone())
+            return Ok(self.clone());
         }
 
         let s = RefCell::borrow(&self.inner);
@@ -95,7 +102,7 @@ impl TypeVar {
                 // This clone is neccesary because otherwise we are keeping the Ref from `s`
                 let tv = tv.clone();
                 drop((s, o));
-                tv.merge(loc, &other)
+                tv.merge(loc, other)
             }
             (_, Inner::Alias(tv)) => {
                 // This clone is neccesary because otherwise we are keeping the Ref from `o`
@@ -141,7 +148,10 @@ impl TypeVar {
             (Inner::Constrained(set1), Inner::Constrained(set2)) => {
                 let setu = set1 & set2;
                 match setu.len() {
-                    0 => Err(TypeErrorType::DisjointContraints(set1.clone(), set2.clone()).location(loc.clone())),
+                    0 => Err(
+                        TypeErrorType::DisjointContraints(set1.clone(), set2.clone())
+                            .location(loc.clone()),
+                    ),
                     1 => {
                         drop((s, o));
                         let ft = setu.into_iter().next().unwrap();
@@ -181,7 +191,7 @@ impl Display for TypeVar {
             Inner::Any => write!(f, "'t{:p} {{any}}", self.inner),
             Inner::Alias(t) => t.fmt(f),
             Inner::Concrete(t) => write!(f, "'t = {t}"),
-            Inner::Constrained(s) => write!(f, "t' =< {s:?}")
+            Inner::Constrained(s) => write!(f, "t' =< {s:?}"),
         }
     }
 }

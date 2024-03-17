@@ -115,12 +115,7 @@ impl Div for Value {
 }
 
 impl Value {
-    pub fn cmp_op(
-        self,
-        other: Value,
-        target_ord: Ordering,
-        negated: bool,
-    ) -> bool {
+    pub fn cmp_op(self, other: Value, target_ord: Ordering, negated: bool) -> bool {
         match self.partial_cmp(&other) {
             None => false,
             Some(ord) => (ord == target_ord) ^ negated,
@@ -128,9 +123,7 @@ impl Value {
     }
     pub fn concat(self, other: Value) -> Value {
         match (self, other) {
-            (Value::String(s1), Value::String(s2)) => {
-                Value::String(format!("{s1}{s2}").into())
-            },
+            (Value::String(s1), Value::String(s2)) => Value::String(format!("{s1}{s2}").into()),
             (v1, v2) => unreachable!("tried to concatenate {v1} and {v2}"),
         }
     }

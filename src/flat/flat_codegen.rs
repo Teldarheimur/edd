@@ -1,14 +1,25 @@
 use std::collections::HashMap;
 
-use crate::ttype::{ast::{Expr, PlaceExpr, Statement}, Type};
+use crate::ttype::{
+    ast::{Expr, PlaceExpr, Statement},
+    Type,
+};
 
 use self::state::FlattenState;
 
-use super::{static_eval::static_eval, ticker::StaticNamer, Binop, Const, FlatType, Function, Global, Ident, Line, StaticDecl, Temp, Unop};
+use super::{
+    static_eval::static_eval, ticker::StaticNamer, Binop, Const, FlatType, Function, Global, Ident,
+    Line, StaticDecl, Temp, Unop,
+};
 
 mod state;
 
-pub fn flatten_function(fn_name: Global, body: Expr, statics: &mut Vec<StaticDecl>, fns: &mut HashMap<Global, Function>) {
+pub fn flatten_function(
+    fn_name: Global,
+    body: Expr,
+    statics: &mut Vec<StaticDecl>,
+    fns: &mut HashMap<Global, Function>,
+) {
     let (fn_name, mut function) = fns.remove_entry(&fn_name).unwrap();
 
     let ret_type = function.ret_type.clone();
@@ -34,30 +45,23 @@ fn flatten_type_maybe(t: Type) -> Option<FlatType> {
         Type::I32 => FlatType::I32,
         Type::Float => FlatType::Float,
         Type::Function(args, ret) => FlatType::FnPtr(
-            args
-                .into_vec()
-                .into_iter()
-                .map(|t| flatten_type(t))
-                .collect(),
+            args.into_vec().into_iter().map(flatten_type).collect(),
             Box::new(flatten_type(*ret)),
         ),
         Type::Pointer(t) => FlatType::Ptr(flatten_type_maybe(*t).map(Box::new)),
         Type::ArrayPointer(t) => FlatType::Ptr(flatten_type_maybe(*t).map(Box::new)),
         Type::Slice(t) => FlatType::Struct(Box::new([
             FlatType::Ptr(flatten_type_maybe(*t).map(Box::new)),
-            FlatType::U16
-            ])),
+            FlatType::U16,
+        ])),
         Type::Array(t, s) => FlatType::Arr(Box::new(flatten_type(*t)), s),
-        Type::Struct(ts) => FlatType::Struct(ts
-            .into_vec()
-            .into_iter()
-            .map(|(_, t)| flatten_type(t))
-            .collect()
+        Type::Struct(ts) => FlatType::Struct(
+            ts.into_vec()
+                .into_iter()
+                .map(|(_, t)| flatten_type(t))
+                .collect(),
         ),
-        Type::Option(opt) => FlatType::Struct(Box::new([
-            flatten_type(*opt),
-            FlatType::Bool,
-        ]))
+        Type::Option(opt) => FlatType::Struct(Box::new([flatten_type(*opt), FlatType::Bool])),
     })
 }
 #[inline]
@@ -67,12 +71,10 @@ pub fn flatten_type(t: Type) -> FlatType {
 
 fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) {
     match expr {
-        Expr::Ident(_, name) => {
-            match state.ident_from_identifier(name) {
-                Ident::Global(g) => state.add_code(Line::ReadGlobal(place, t, g)),
-                Ident::Temp(temp) => state.add_code(Line::SetTo(place, t, temp)),
-            }
-        }
+        Expr::Ident(_, name) => match state.ident_from_identifier(name) {
+            Ident::Global(g) => state.add_code(Line::ReadGlobal(place, t, g)),
+            Ident::Temp(temp) => state.add_code(Line::SetTo(place, t, temp)),
+        },
         Expr::ConstBoolean(_, b) => {
             state.add_code(Line::SetConst(place, t, Const::ConstBoolean(b)));
         }
@@ -109,10 +111,9 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             };
             state.add_code(Line::SetConst(place, t, c));
         }
-        Expr::ConstUnit(_) |
-        Expr::ConstNull(_) => {
+        Expr::ConstUnit(_) | Expr::ConstNull(_) => {
             state.add_code(Line::SetConst(place, t, Const::ConstZero));
-        },
+        }
         Expr::Ref(_, Ok(PlaceExpr::Ident(_, i))) => {
             state.add_code(Line::SetAddrOf(place, t, state.ident_from_identifier(i)));
         }
@@ -141,8 +142,8 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
 
             match (from_t, to_t) {
                 (t1, t2) if t1 == t2 => flatten_expr(*e, t1, place, state),
-                (FlatType::Arr(t, _sz), FlatType::Struct(st)) |
-                (FlatType::Struct(st), FlatType::Arr(t, _sz)) => {
+                (FlatType::Arr(t, _sz), FlatType::Struct(st))
+                | (FlatType::Struct(st), FlatType::Arr(t, _sz)) => {
                     if *st != [FlatType::Ptr(Some(t)), FlatType::U16] {
                         unimplemented!()
                     }
@@ -152,7 +153,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
                 }
                 _ => todo!(),
             }
-        },
+        }
         // TODO: check for overflow
         Expr::Add(_, a, b) => {
             let ta = state.new_temp("add_arg1", t.clone());
@@ -189,14 +190,22 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             let zero_t = state.new_temp("zero", t.clone());
             state.add_code(Line::SetConst(zero_t.clone(), t.clone(), Const::ConstZero));
             let is_zero = state.new_temp("zero_cond", FlatType::Bool);
-            state.add_code(Line::SetBinop(is_zero.clone(), t.clone(), Binop::Eq, tb.clone(), zero_t));
+            state.add_code(Line::SetBinop(
+                is_zero.clone(),
+                t.clone(),
+                Binop::Eq,
+                tb.clone(),
+                zero_t,
+            ));
 
             let safe_l = state.new_label();
             let error_l = state.new_label();
 
             state.add_code(Line::If(is_zero, error_l.clone(), safe_l.clone()));
             state.add_code(Line::Label(error_l));
-            state.add_code(Line::Panic(format!(":{}:{}: divended was zero", loc.line_start, loc.col_start).into()));
+            state.add_code(Line::Panic(
+                format!(":{}:{}: divended was zero", loc.line_start, loc.col_start).into(),
+            ));
             state.add_code(Line::Label(safe_l));
             state.add_code(Line::SetBinop(place, t, Binop::Div, ta, tb));
         }
@@ -231,7 +240,8 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
                 t => unreachable!("{} {t:?}", f_name.display()),
             };
 
-            let args = args.into_vec()
+            let args = args
+                .into_vec()
                 .into_iter()
                 .zip(t_args.into_vec())
                 .map(|(a, t)| {
@@ -315,7 +325,12 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
     }
 }
 
-fn flatten_block(bl: Box<[Statement]>, block_t: FlatType, place: Temp, state: &mut FlattenState<'_>) {
+fn flatten_block(
+    bl: Box<[Statement]>,
+    block_t: FlatType,
+    place: Temp,
+    state: &mut FlattenState<'_>,
+) {
     let mut last_expr = None;
     for statement in bl.into_vec() {
         last_expr = None;
@@ -330,8 +345,7 @@ fn flatten_block(bl: Box<[Statement]>, block_t: FlatType, place: Temp, state: &m
                 flatten_expr(e, t, place.clone(), state);
                 last_expr = Some(place);
             }
-            Statement::Let(_, n, t, e) |
-            Statement::Var(_, n, t, e) => {
+            Statement::Let(_, n, t, e) | Statement::Var(_, n, t, e) => {
                 let t = flatten_type(*t);
                 let place = state.new_temp_from_identifier(n, t.clone());
                 flatten_expr(e, t, place, state);
@@ -354,7 +368,8 @@ fn flatten_block(bl: Box<[Statement]>, block_t: FlatType, place: Temp, state: &m
             }
             Statement::Rebind(_, PlaceExpr::Deref(_, ptr_e, inner_t), e) => {
                 let inner_t = flatten_type(*inner_t);
-                let place_ptr = state.new_temp("deref_ptr", FlatType::Ptr(Some(Box::new(inner_t.clone()))));
+                let place_ptr =
+                    state.new_temp("deref_ptr", FlatType::Ptr(Some(Box::new(inner_t.clone()))));
                 flatten_expr(*ptr_e, FlatType::Ptr(None), place_ptr.clone(), state);
                 let t = inner_t;
                 let place_val = state.new_temp("val", t.clone());

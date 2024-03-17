@@ -1,4 +1,9 @@
-use std::{collections::HashSet, fmt::{self, Display}, rc::Rc, result::Result as StdResult};
+use std::{
+    collections::HashSet,
+    fmt::{self, Display},
+    rc::Rc,
+    result::Result as StdResult,
+};
 
 use collect_result::CollectResult;
 
@@ -6,9 +11,9 @@ use crate::parse::location::Location;
 
 use self::typevar::TypeVar;
 
-pub mod type_checker;
 pub mod ast;
 pub mod stab;
+pub mod type_checker;
 pub mod typevar;
 
 pub type Result<T, E = TypeError> = StdResult<T, E>;
@@ -159,7 +164,10 @@ impl Display for TypeError {
             NotMutable(v) => write!(f, "invalid re-assigment of non-mutable variable {v}"),
             CannotCall(t) => write!(f, "cannot call type {t}"),
             UnequalArraySizes(s1, s2) => write!(f, "arrays did not have same length: {s1} != {s2}"),
-            UnequalArgLen(s1, s2) => write!(f, "functions did not have number of arguments: {s1} != {s2}"),
+            UnequalArgLen(s1, s2) => write!(
+                f,
+                "functions did not have number of arguments: {s1} != {s2}"
+            ),
             NotPtr(t) => write!(f, "type {t} is not a pointer"),
             DisjointContraints(s1, s2) => write!(f, "incompatible type constraints: {s1:?} {s2:?}"),
             NonConcreteType => write!(f, "could not infer concrete type"),
@@ -175,12 +183,9 @@ pub fn unify_types(loc: &Location, exp: &Type, act: &Type) -> Result<Type> {
         (a, b) if a == b => Ok(a.clone()),
         // scary type!!!
         (Opaque, _) | (_, Opaque) => Ok(Opaque),
-        (Unknown(t1), Unknown(t2)) => {
-            Ok(Type::Unknown(t1.merge(loc, &t2)?))
-        }
+        (Unknown(t1), Unknown(t2)) => Ok(Type::Unknown(t1.merge(loc, t2)?)),
         (t, Unknown(tv)) | (Unknown(tv), t) => tv.merge_with_type(loc, t),
-        (Array(t1, _), Slice(t2)) |
-        (Slice(t1), Array(t2, _)) => {
+        (Array(t1, _), Slice(t2)) | (Slice(t1), Array(t2, _)) => {
             Ok(Slice(Box::new(unify_types(loc, t1, t2)?)))
         }
         (Array(t1, s1), Array(t2, s2)) => {
@@ -191,10 +196,10 @@ pub fn unify_types(loc: &Location, exp: &Type, act: &Type) -> Result<Type> {
         }
         (Function(t1, rt1), Function(t2, rt2)) => {
             if t1.len() != t2.len() {
-                return Err(TypeErrorType::UnequalArraySizes(
-                    t1.len() as u16,
-                    t2.len() as u16,
-                ).location(loc.clone()));
+                return Err(
+                    TypeErrorType::UnequalArraySizes(t1.len() as u16, t2.len() as u16)
+                        .location(loc.clone()),
+                );
             }
             let args: Vec<_> = t1
                 .iter()

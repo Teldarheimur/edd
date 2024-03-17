@@ -123,7 +123,12 @@ pub enum Expr {
     Cast(Location, Box<Self>, Type),
 
     Block(Location, Box<[Statement]>),
-    Lambda(Location, Box<[(Rc<str>, Option<Type>)]>, Option<Type>, Box<Self>),
+    Lambda(
+        Location,
+        Box<[(Rc<str>, Option<Type>)]>,
+        Option<Type>,
+        Box<Self>,
+    ),
     Call(Location, Rc<str>, Box<[Self]>),
 
     If(Location, Box<Self>, Box<Self>, Box<Self>),
@@ -187,9 +192,7 @@ impl Display for Expr {
             Expr::Ref(_, a) => write!(f, "&{a}"),
             Expr::Neg(_, a) => write!(f, "-{a}"),
             Expr::Deref(_, a) => write!(f, "*{a}"),
-            Expr::Array(_, a) => f.debug_list()
-                .entries(&**a)
-                .finish(),
+            Expr::Array(_, a) => f.debug_list().entries(&**a).finish(),
             Expr::StructConstructor(_, strct) => {
                 write!(f, "{{ ")?;
                 for (name, val) in strct.iter() {

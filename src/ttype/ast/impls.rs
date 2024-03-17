@@ -129,7 +129,7 @@ impl Display for Expr {
             Expr::Ref(_, a) => match a {
                 Ok(e) => write!(f, "&{e}"),
                 Err(e) => write!(f, "&{e}"),
-            }
+            },
             Expr::Neg(_, a) => write!(f, "-{a}"),
             Expr::Deref(_, a) => write!(f, "*{a}"),
             Expr::Array(_, _a) => todo!(),

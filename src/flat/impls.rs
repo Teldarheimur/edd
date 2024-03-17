@@ -1,8 +1,14 @@
-use std::{fmt::{self, Display}, rc::Rc};
+use std::{
+    fmt::{self, Display},
+    rc::Rc,
+};
 
 use crate::ttype::Type;
 
-use super::{flat_codegen::flatten_type, Binop, Const, FlatType, Function, Global, Ident, Label, Line, Program, StaticDecl, Temp, Unop};
+use super::{
+    flat_codegen::flatten_type, Binop, Const, FlatType, Function, Global, Ident, Label, Line,
+    Program, StaticDecl, Temp, Unop,
+};
 
 impl Function {
     pub fn init(args: Box<[(Rc<str>, Type)]>, ret_type: Type) -> Self {
@@ -52,7 +58,10 @@ impl Temp {
     }
     #[inline]
     pub fn display_with<'a>(&'a self, locals: &'a [Box<str>]) -> DisplayTemp<'a> {
-        DisplayTemp { inner: self, locals }
+        DisplayTemp {
+            inner: self,
+            locals,
+        }
     }
 }
 impl Ident {
@@ -62,7 +71,10 @@ impl Ident {
     }
     #[inline]
     pub fn display_with<'a>(&'a self, locals: &'a [Box<str>]) -> DisplayIdent<'a> {
-        DisplayIdent { inner: self, locals }
+        DisplayIdent {
+            inner: self,
+            locals,
+        }
     }
 }
 impl Display for DisplayTemp<'_> {
@@ -140,7 +152,16 @@ impl Display for Program {
             }
         }
         writeln!(f)?;
-        for (name, Function{lines, local_names, arg_types, ret_type }) in &self.fns {
+        for (
+            name,
+            Function {
+                lines,
+                local_names,
+                arg_types,
+                ret_type,
+            },
+        ) in &self.fns
+        {
             write!(f, "fn {name}(")?;
             let mut first = true;
             for (at, i) in arg_types.iter().zip(1..) {
@@ -165,7 +186,10 @@ impl Line {
     }
     #[inline]
     pub fn display_with<'a>(&'a self, locals: &'a [Box<str>]) -> DisplayLine<'a> {
-        DisplayLine { inner: self, locals }
+        DisplayLine {
+            inner: self,
+            locals,
+        }
     }
 }
 #[derive(Clone, Copy)]
@@ -178,12 +202,38 @@ impl Display for DisplayLine<'_> {
         let locals = self.locals;
         match self.inner {
             Line::SetConst(dest, t, src) => write!(f, "{} = {t} {src}", dest.display_with(locals)),
-            Line::SetTo(dest, t, src) => write!(f, "{} = {t} {}", dest.display_with(locals), src.display_with(locals)),
-            Line::SetBinop(dest, t, binop, op1, op2) => write!(f, "{} = {t} {} {binop} {}", dest.display_with(locals), op1.display_with(locals), op2.display_with(locals)),
-            Line::SetUnop(dest, t, unop, op1) => write!(f, "{} = {t} {unop}{}", dest.display_with(locals), op1.display_with(locals)),
-            Line::SetAddrOf(dest, t, src) => write!(f, "{} = *{t} &{}", dest.display_with(locals), src.display_with(locals)),
+            Line::SetTo(dest, t, src) => write!(
+                f,
+                "{} = {t} {}",
+                dest.display_with(locals),
+                src.display_with(locals)
+            ),
+            Line::SetBinop(dest, t, binop, op1, op2) => write!(
+                f,
+                "{} = {t} {} {binop} {}",
+                dest.display_with(locals),
+                op1.display_with(locals),
+                op2.display_with(locals)
+            ),
+            Line::SetUnop(dest, t, unop, op1) => write!(
+                f,
+                "{} = {t} {unop}{}",
+                dest.display_with(locals),
+                op1.display_with(locals)
+            ),
+            Line::SetAddrOf(dest, t, src) => write!(
+                f,
+                "{} = *{t} &{}",
+                dest.display_with(locals),
+                src.display_with(locals)
+            ),
             Line::SetCall(dest, t, name, args) => {
-                write!(f, "{} = {t} {}(", dest.display_with(locals), name.display_with(locals))?;
+                write!(
+                    f,
+                    "{} = {t} {}(",
+                    dest.display_with(locals),
+                    name.display_with(locals)
+                )?;
                 let mut first = true;
                 for arg in &**args {
                     if !first {
@@ -195,13 +245,31 @@ impl Display for DisplayLine<'_> {
                 write!(f, ")")
             }
             Line::Label(lbl) => write!(f, "{lbl}:"),
-            Line::If(cond_t, lbl_true, lbl_false) => write!(f, "if {}: goto {lbl_true} else goto {lbl_false}", cond_t.display_with(locals)),
+            Line::If(cond_t, lbl_true, lbl_false) => write!(
+                f,
+                "if {}: goto {lbl_true} else goto {lbl_false}",
+                cond_t.display_with(locals)
+            ),
             Line::Goto(l) => write!(f, "goto {l}"),
             Line::Ret(a) => write!(f, "ret {}", a.display_with(locals)),
-            Line::WriteGlobal(dest, t, src) => write!(f, "{dest} = {t} {}", src.display_with(locals)),
-            Line::ReadGlobal(dest, t, src) => write!(f, "{} = {t} {src}", dest.display_with(locals)),
-            Line::WriteTo(dest_ptr, t, src) => write!(f, "*{} = {t} {}", dest_ptr.display_with(locals), src.display_with(locals)),
-            Line::SetIndex(dest, t, src) => write!(f, "{}[??] = {t} {}", dest.display_with(locals), src.display_with(locals)),
+            Line::WriteGlobal(dest, t, src) => {
+                write!(f, "{dest} = {t} {}", src.display_with(locals))
+            }
+            Line::ReadGlobal(dest, t, src) => {
+                write!(f, "{} = {t} {src}", dest.display_with(locals))
+            }
+            Line::WriteTo(dest_ptr, t, src) => write!(
+                f,
+                "*{} = {t} {}",
+                dest_ptr.display_with(locals),
+                src.display_with(locals)
+            ),
+            Line::SetIndex(dest, t, src) => write!(
+                f,
+                "{}[??] = {t} {}",
+                dest.display_with(locals),
+                src.display_with(locals)
+            ),
             Line::Panic(msg) => write!(f, "panic({msg})"),
         }
     }

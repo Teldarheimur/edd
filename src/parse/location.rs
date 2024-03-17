@@ -1,4 +1,8 @@
-use std::{fmt::{self, Display}, path::Path, rc::Rc};
+use std::{
+    fmt::{self, Display},
+    path::Path,
+    rc::Rc,
+};
 
 use pest::Span;
 
@@ -38,6 +42,14 @@ impl Display for Location {
         // if self.col_start == 0 || self.line_start == 0 || self.col_end == 0 || self.line_end == 0 {
         //     return write!(f, "?:?")
         // }
-        write!(f, "{}:{}:{} - {}:{}", self.source_file.display(), self.line_start, self.col_start, self.line_end, self.col_start)
+        write!(
+            f,
+            "{}:{}:{} - {}:{}",
+            self.source_file.display(),
+            self.line_start,
+            self.col_start,
+            self.line_end,
+            self.col_start
+        )
     }
 }

@@ -1,10 +1,16 @@
 use std::{collections::HashSet, rc::Rc};
 
-use crate::ttype::{ast::{Expr, PlaceExpr, Statement}, Type};
+use crate::ttype::{
+    ast::{Expr, PlaceExpr, Statement},
+    Type,
+};
 
 use super::{flat_codegen::flatten_type, ticker::StaticNamer, Const, FlatType, Global, StaticDecl};
 
-pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>, statics: Vec<StaticDecl>) -> Vec<StaticDecl> {
+pub fn compute_statics(
+    static_exprs: Vec<(Rc<str>, Type, Expr)>,
+    statics: Vec<StaticDecl>,
+) -> Vec<StaticDecl> {
     let mut calculate_order: Vec<(_, _, _, HashSet<_>)> = Vec::new();
     let mut static_namer = StaticNamer::new("#s");
 
@@ -15,7 +21,7 @@ pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>, statics: Vec<St
         let mut insert_at = 0;
         for (i, (other_name, _, _, deps)) in calculate_order.iter().enumerate() {
             if deps.contains(other_name) {
-                insert_at = i+1;
+                insert_at = i + 1;
                 if deps.contains(&name) {
                     todo!("return cyclic dependency error");
                 }
@@ -26,7 +32,14 @@ pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>, statics: Vec<St
 
     let mut out = statics;
     for (name, t, expr, _) in calculate_order {
-        static_eval(Global(name), flatten_type(t), expr, &mut static_namer, &mut out).unwrap();
+        static_eval(
+            Global(name),
+            flatten_type(t),
+            expr,
+            &mut static_namer,
+            &mut out,
+        )
+        .unwrap();
     }
 
     out
@@ -35,12 +48,12 @@ pub fn compute_statics(static_exprs: Vec<(Rc<str>, Type, Expr)>, statics: Vec<St
 fn lookup_in_out<'a>(out: &'a [StaticDecl], name: &Global) -> &'a StaticDecl {
     for sd in out.iter().rev() {
         match sd {
-            sd @ (StaticDecl::SetConst(g, _, _) |
-            StaticDecl::SetAlias(g, _, _) |
-            StaticDecl::SetArray(g, _, _) |
-            StaticDecl::SetString(g, _, _) |
-            StaticDecl::External(g, _) |
-            StaticDecl::SetPtr(g, _, _)) => {
+            sd @ (StaticDecl::SetConst(g, _, _)
+            | StaticDecl::SetAlias(g, _, _)
+            | StaticDecl::SetArray(g, _, _)
+            | StaticDecl::SetString(g, _, _)
+            | StaticDecl::External(g, _)
+            | StaticDecl::SetPtr(g, _, _)) => {
                 if g == name {
                     return sd;
                 }
@@ -50,7 +63,13 @@ fn lookup_in_out<'a>(out: &'a [StaticDecl], name: &Global) -> &'a StaticDecl {
     unreachable!()
 }
 
-pub fn static_eval(place: Global, t: FlatType, expr: Expr, namer: &mut StaticNamer, out: &mut Vec<StaticDecl>) -> Result<(), Box<str>>{
+pub fn static_eval(
+    place: Global,
+    t: FlatType,
+    expr: Expr,
+    namer: &mut StaticNamer,
+    out: &mut Vec<StaticDecl>,
+) -> Result<(), Box<str>> {
     match expr {
         Expr::Ident(_, alias) => {
             out.push(StaticDecl::SetAlias(place, t, Global(alias)));
@@ -242,11 +261,14 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
     }
 }
 
-fn pl_expr_symbol_deps(pl_expr: &PlaceExpr, deps: &mut HashSet<Rc<str>>, overshadowed: &HashSet<Rc<str>>) {
+fn pl_expr_symbol_deps(
+    pl_expr: &PlaceExpr,
+    deps: &mut HashSet<Rc<str>>,
+    overshadowed: &HashSet<Rc<str>>,
+) {
     match pl_expr {
         PlaceExpr::Ident(_, name) => add_dep(name, deps, overshadowed),
-        PlaceExpr::Deref(_, e, _) |
-        PlaceExpr::FieldAccess(_, e, _) => {
+        PlaceExpr::Deref(_, e, _) | PlaceExpr::FieldAccess(_, e, _) => {
             expr_symbol_deps(e, deps, overshadowed);
         }
         PlaceExpr::Index(_, e1, e2) => {
@@ -256,19 +278,21 @@ fn pl_expr_symbol_deps(pl_expr: &PlaceExpr, deps: &mut HashSet<Rc<str>>, oversha
     }
 }
 
-fn statement_symbol_deps(stmnt: &Statement, deps: &mut HashSet<Rc<str>>, overshadowed: &mut HashSet<Rc<str>>) {
+fn statement_symbol_deps(
+    stmnt: &Statement,
+    deps: &mut HashSet<Rc<str>>,
+    overshadowed: &mut HashSet<Rc<str>>,
+) {
     match stmnt {
         Statement::Rebind(_, pl_expr, expr) => {
             pl_expr_symbol_deps(pl_expr, deps, overshadowed);
             expr_symbol_deps(expr, deps, overshadowed);
         }
-        Statement::Let(_, n, _, e) |
-        Statement::Var(_, n, _, e) => {
+        Statement::Let(_, n, _, e) | Statement::Var(_, n, _, e) => {
             expr_symbol_deps(e, deps, overshadowed);
             overshadowed.insert(n.clone());
         }
-        Statement::Express(_, _, e) |
-        Statement::Return(_, e) => {
+        Statement::Express(_, _, e) | Statement::Return(_, e) => {
             expr_symbol_deps(e, deps, overshadowed);
         }
     }

@@ -5,10 +5,10 @@ use ttype::type_checker::check_program;
 
 use self::parse::parse_file;
 
+pub mod flat;
 pub mod parse;
 pub mod rt;
 pub mod ttype;
-pub mod flat;
 
 #[track_caller]
 fn get_only_one<R, I: Iterator<Item = R>>(mut iter: I) -> R {
@@ -24,11 +24,11 @@ pub struct CompileOptions {
 }
 
 pub fn compile(path: &Path, options: CompileOptions) -> Result<Program, Box<dyn Display>> {
-    let program = parse_file(path).map_err(|e| -> Box<dyn Display> {Box::new(e)})?;
+    let program = parse_file(path).map_err(|e| -> Box<dyn Display> { Box::new(e) })?;
     if let Some(hook) = options.parsed_hook {
         hook(&program);
     }
-    let program = check_program(program).map_err(|e| -> Box<dyn Display> {Box::new(e)})?;
+    let program = check_program(program).map_err(|e| -> Box<dyn Display> { Box::new(e) })?;
     if let Some(hook) = options.checked_hook {
         hook(&program);
     }
@@ -41,13 +41,13 @@ impl CompileOptions {
     pub fn hook_parsed(self, hook: fn(&self::parse::ast::Program)) -> Self {
         Self {
             parsed_hook: Some(hook),
-            .. self
+            ..self
         }
     }
     pub fn hook_type_checked(self, hook: fn(&self::ttype::ast::Program)) -> Self {
         Self {
             checked_hook: Some(hook),
-            .. self
+            ..self
         }
     }
 }

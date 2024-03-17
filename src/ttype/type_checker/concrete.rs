@@ -1,6 +1,10 @@
-use crate::{parse::location::Location, ttype::{
-    ast::{Expr, PlaceExpr, Statement}, Result, Type
-}};
+use crate::{
+    parse::location::Location,
+    ttype::{
+        ast::{Expr, PlaceExpr, Statement},
+        Result, Type,
+    },
+};
 
 pub fn concretise_type(loc: Location, t: &mut Type) -> Result<()> {
     match t {
@@ -69,9 +73,7 @@ fn concretise_pexpr(p: &mut PlaceExpr) -> Result<()> {
             concretise_expr(e)?;
             concretise_type(loc.clone(), t)
         }
-        PlaceExpr::Index(_, e, e2) => {
-            concretise_expr(e).and_then(|()| concretise_expr(e2))
-        }
+        PlaceExpr::Index(_, e, e2) => concretise_expr(e).and_then(|()| concretise_expr(e2)),
         PlaceExpr::FieldAccess(_, e, _) => concretise_expr(e),
     }
 }
@@ -87,13 +89,12 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
         | Expr::ConstU32(_, _)
         | Expr::ConstFloat(_, _)
         | Expr::ConstCompInteger(_, _)
-        | Expr::ConstUnit(_, )
+        | Expr::ConstUnit(_)
         | Expr::ConstString(_, _)
-        | Expr::ConstNull(_, ) => Ok(()),
-        Expr::Ref(_, Err(e)) |
-        Expr::Not(_, e) |
-        Expr::Neg(_, e) |
-        Expr::Deref(_, e) => concretise_expr(e),
+        | Expr::ConstNull(_) => Ok(()),
+        Expr::Ref(_, Err(e)) | Expr::Not(_, e) | Expr::Neg(_, e) | Expr::Deref(_, e) => {
+            concretise_expr(e)
+        }
         Expr::Lambda(loc, args, ret, e) => {
             for (_, at) in args.iter_mut() {
                 concretise_type(loc.clone(), at)?;
@@ -114,8 +115,7 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
             }
             Ok(())
         }
-        Expr::Array(_, es) |
-        Expr::Call(_, _, es) => {
+        Expr::Array(_, es) | Expr::Call(_, _, es) => {
             for e in es.iter_mut() {
                 concretise_expr(e)?;
             }
@@ -126,20 +126,20 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
             concretise_expr(e2)?;
             concretise_expr(e3)
         }
-        Expr::Add(_, e1, e2) |
-        Expr::Sub(_, e1, e2) |
-        Expr::Mul(_, e1, e2) |
-        Expr::Div(_, e1, e2) |
-        Expr::Concat(_, e1, e2) => {
+        Expr::Add(_, e1, e2)
+        | Expr::Sub(_, e1, e2)
+        | Expr::Mul(_, e1, e2)
+        | Expr::Div(_, e1, e2)
+        | Expr::Concat(_, e1, e2) => {
             concretise_expr(e1)?;
             concretise_expr(e2)
         }
-        Expr::Eq(loc, e1, e2, t) |
-        Expr::Neq(loc, e1, e2, t) |
-        Expr::Lt(loc, e1, e2, t) |
-        Expr::Lte(loc, e1, e2, t) |
-        Expr::Gt(loc, e1, e2, t) |
-        Expr::Gte(loc, e1, e2, t) => {
+        Expr::Eq(loc, e1, e2, t)
+        | Expr::Neq(loc, e1, e2, t)
+        | Expr::Lt(loc, e1, e2, t)
+        | Expr::Lte(loc, e1, e2, t)
+        | Expr::Gt(loc, e1, e2, t)
+        | Expr::Gte(loc, e1, e2, t) => {
             concretise_expr(e1)?;
             concretise_expr(e2)?;
             concretise_type(loc.clone(), t)

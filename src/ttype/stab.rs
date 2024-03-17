@@ -11,10 +11,7 @@ pub struct Symbol {
 }
 impl Symbol {
     fn new(s_type: Type, mutable: bool) -> Self {
-        Symbol {
-            mutable,
-            s_type,
-        }
+        Symbol { mutable, s_type }
     }
 }
 

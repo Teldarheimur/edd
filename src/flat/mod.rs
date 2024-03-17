@@ -2,12 +2,15 @@ use std::{collections::HashMap, rc::Rc};
 
 use crate::ttype::ast::{Decl, Program as TypedProgram};
 
-mod static_eval;
-mod ticker;
 mod flat_codegen;
 mod impls;
+mod static_eval;
+mod ticker;
 
-use self::{flat_codegen::{flatten_function, flatten_type}, static_eval::compute_statics};
+use self::{
+    flat_codegen::{flatten_function, flatten_type},
+    static_eval::compute_statics,
+};
 
 pub fn flatten(program: TypedProgram) -> Program {
     let mut fn_exprs = HashMap::new();
@@ -18,7 +21,7 @@ pub fn flatten(program: TypedProgram) -> Program {
         match decl {
             Decl::Fn(_, args, b) => {
                 let glbl = Global(name);
-                fns.insert(glbl.clone(), Function::init(args, b.0)); 
+                fns.insert(glbl.clone(), Function::init(args, b.0));
                 fn_exprs.insert(glbl, b.1);
             }
             Decl::Const(_, b) | Decl::Static(_, b) => {
@@ -26,7 +29,10 @@ pub fn flatten(program: TypedProgram) -> Program {
             }
             Decl::ExternFn(_, args, ret) => {
                 let t = FlatType::FnPtr(
-                    args.into_vec().into_iter().map(|(_, t)| flatten_type(t)).collect(),
+                    args.into_vec()
+                        .into_iter()
+                        .map(|(_, t)| flatten_type(t))
+                        .collect(),
                     Box::new(flatten_type(*ret)),
                 );
                 external_symbols.push(StaticDecl::External(Global(name), t));
@@ -42,10 +48,7 @@ pub fn flatten(program: TypedProgram) -> Program {
         flatten_function(name, body, &mut statics, &mut fns);
     }
 
-    Program {
-        fns,
-        statics,
-    }
+    Program { fns, statics }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -161,7 +164,7 @@ pub enum Const {
     ConstU32(u32),
     ConstFloat(f64),
     /// Used for `null`, `unit` (which will be zero-sized anyways) and anything zero-initialised
-    ConstZero
+    ConstZero,
 }
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Binop {

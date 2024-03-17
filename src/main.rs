@@ -1,9 +1,10 @@
-use edd::{
-    compile, flat::Program, rt::{
-        run, RuntimeError, SymbolTable, Value
-    }, CompileOptions
-};
 use clap::Parser;
+use edd::{
+    compile,
+    flat::Program,
+    rt::{run, RuntimeError, SymbolTable, Value},
+    CompileOptions,
+};
 
 use std::path::PathBuf;
 

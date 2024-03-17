@@ -44,14 +44,14 @@ lazy_static! {
 
 pub fn parse_file(path: &Path) -> Result<Program> {
     let source = {
-        let mut file = File::open(&path)?;
+        let mut file = File::open(path)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
         buf
     };
     let pairs = EddParser::parse(Rule::program, &source)?;
 
-    Ok(EddParser::parse_program(pairs, &path.into())?)
+    EddParser::parse_program(pairs, &path.into())
 }
 
 #[derive(Parser)]
@@ -65,7 +65,7 @@ impl EddParser {
             match part.as_rule() {
                 Rule::string_part => {
                     buf.push_str(part.as_str());
-                },
+                }
                 Rule::escape_c => match part.as_str() {
                     "n" => buf.push('\n'),
                     "r" => buf.push('\r'),
@@ -77,7 +77,7 @@ impl EddParser {
                     x if x.starts_with('x') => match u8::from_str_radix(&x[1..], 16) {
                         Ok(c @ 0..=0x7f) => buf.push(c as char),
                         _ => unreachable!(),
-                    }
+                    },
                     _ => todo!("return invalid escape sequence error"),
                 },
                 r => unreachable!("{r:?} {:?}", part.as_span().start_pos().line_col()),
@@ -123,7 +123,7 @@ impl EddParser {
                 Rule::float_t => Type::I8,
                 Rule::unit_t => Type::Unit,
                 _ => unreachable!(),
-            }
+            },
             Rule::opt => Type::Option(Box::new(Self::parse_type(t.into_inner()).unwrap())),
             Rule::ptr => Type::Pointer(Box::new(Self::parse_type(t.into_inner()).unwrap())),
             Rule::slice => Type::Slice(Box::new(Self::parse_type(t.into_inner()).unwrap())),
@@ -155,7 +155,10 @@ impl EddParser {
     fn parse_expr(expr: Pairs<Rule>, sf: &Rc<Path>) -> Expr {
         EXPR_PARSER
             .map_primary(|p| match p.as_rule() {
-                Rule::literal => Expr::Const(Location::from_span(sf, p.as_span()), Self::parse_literal(p.into_inner())),
+                Rule::literal => Expr::Const(
+                    Location::from_span(sf, p.as_span()),
+                    Self::parse_literal(p.into_inner()),
+                ),
                 Rule::ident => Expr::Ident(Location::from_span(sf, p.as_span()), p.as_str().into()),
                 Rule::expr => Self::parse_expr(p.into_inner(), sf),
                 Rule::r#if => {
@@ -203,18 +206,66 @@ impl EddParser {
                 r => unreachable!("{r:?}"),
             })
             .map_infix(|lhs, op, rhs| match op.as_rule() {
-                Rule::add => Expr::Add(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::subtract => Expr::Sub(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::multiply => Expr::Mul(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::divide => Expr::Div(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::eq => Expr::Eq(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::neq => Expr::Neq(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::lt => Expr::Lt(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::lte => Expr::Lte(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::gt => Expr::Gt(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::gte => Expr::Gte(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::concat => Expr::Concat(Location::from_span(sf, op.as_span()), Box::new(lhs), Box::new(rhs)),
-                Rule::cast_as => Expr::Cast(Location::from_span(sf, op.as_span()), Box::new(lhs), todo!("{}", rhs)),
+                Rule::add => Expr::Add(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::subtract => Expr::Sub(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::multiply => Expr::Mul(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::divide => Expr::Div(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::eq => Expr::Eq(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::neq => Expr::Neq(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::lt => Expr::Lt(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::lte => Expr::Lte(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::gt => Expr::Gt(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::gte => Expr::Gte(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::concat => Expr::Concat(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    Box::new(rhs),
+                ),
+                Rule::cast_as => Expr::Cast(
+                    Location::from_span(sf, op.as_span()),
+                    Box::new(lhs),
+                    todo!("{}", rhs),
+                ),
                 _ => unreachable!(),
             })
             .map_prefix(|op, rhs| match op.as_rule() {
@@ -310,7 +361,8 @@ impl EddParser {
                     let loc = Location::from_span(sf, p.as_span());
                     let mut ps = p.into_inner();
                     let n = ps.next().unwrap().as_str().into();
-                    let typed_idents = ps.next()
+                    let typed_idents = ps
+                        .next()
                         .unwrap()
                         .into_inner()
                         .map(|ps| Self::parse_typed_ident(ps.into_inner()))
@@ -325,7 +377,8 @@ impl EddParser {
                     let loc = Location::from_span(sf, p.as_span());
                     let mut ps = p.into_inner();
                     let n = ps.next().unwrap().as_str().into();
-                    let typed_idents = ps.next()
+                    let typed_idents = ps
+                        .next()
                         .unwrap()
                         .into_inner()
                         .map(|ps| Self::parse_typed_ident(ps.into_inner()))

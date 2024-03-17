@@ -1,4 +1,10 @@
-use std::{cell::RefCell, cmp::Ordering, collections::{BTreeMap, HashMap}, iter, rc::Rc};
+use std::{
+    cell::RefCell,
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap},
+    iter,
+    rc::Rc,
+};
 
 use crate::flat::{Binop, Const, Global, Ident, Label, Line, Program, StaticDecl, Temp, Unop};
 
@@ -47,7 +53,7 @@ pub struct RuntimeState<'a> {
 }
 
 impl<'a> RuntimeState<'a> {
-    pub fn with_args(globals: &'a SymbolTable, args: impl Iterator<Item=Value>) -> Self {
+    pub fn with_args(globals: &'a SymbolTable, args: impl Iterator<Item = Value>) -> Self {
         Self {
             globals,
             stack: iter::once(Value::Naught).chain(args).collect(),
@@ -82,7 +88,7 @@ impl SymbolTable {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn iter(&self) -> impl Iterator<Item=(&Rc<str>, &RefCell<Value>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Rc<str>, &RefCell<Value>)> {
         self.map.iter()
     }
     pub fn add_func<S: Into<Rc<str>>>(&mut self, name: S, f: fn(Box<[Value]>) -> Value) {
@@ -133,7 +139,7 @@ pub fn run(program: Program, symtab: &mut SymbolTable) -> Result<Value, RuntimeE
                 symtab.add_var(n.into_inner(), val);
             }
             StaticDecl::External(n, _) => {
-                let _ = symtab.lookup(&n.inner());
+                let _ = symtab.lookup(n.inner());
             }
         }
     }
@@ -144,8 +150,8 @@ pub fn run(program: Program, symtab: &mut SymbolTable) -> Result<Value, RuntimeE
         Value::Function(body) => {
             let mut rs = RuntimeState::with_args(symtab, [].into_iter());
             run_lines(&body, &mut rs)
-        },
-        _ => Err(RuntimeError::InvalidMain)
+        }
+        _ => Err(RuntimeError::InvalidMain),
     }
 }
 
@@ -221,16 +227,13 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
 
                 let val;
                 if let Value::BuiltinFn(f) = f {
-                    let args = args
-                        .iter()
-                        .map(|arg| state.lookup(arg.clone()))
-                        .collect();
+                    let args = args.iter().map(|arg| state.lookup(arg.clone())).collect();
 
                     val = f(args);
                 } else if let Value::Function(f_lines) = f {
-                    let mut f_rs = RuntimeState::with_args(state.globals, args
-                        .iter()
-                        .map(|arg| state.lookup(arg.clone()))
+                    let mut f_rs = RuntimeState::with_args(
+                        state.globals,
+                        args.iter().map(|arg| state.lookup(arg.clone())),
                     );
 
                     val = run_lines(&f_lines, &mut f_rs)?;

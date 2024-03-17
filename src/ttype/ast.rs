@@ -80,41 +80,41 @@ pub enum Expr {
 impl Expr {
     pub(crate) fn location(&self) -> Location {
         match self {
-            Expr::Ident(loc, _) |
-            Expr::ConstBoolean(loc, _) |
-            Expr::ConstI8(loc, _) |
-            Expr::ConstU8(loc, _) |
-            Expr::ConstI16(loc, _) |
-            Expr::ConstU16(loc, _) |
-            Expr::ConstI32(loc, _) |
-            Expr::ConstU32(loc, _) |
-            Expr::ConstFloat(loc, _) |
-            Expr::ConstCompInteger(loc, _) |
-            Expr::ConstUnit(loc) |
-            Expr::ConstString(loc, _) |
-            Expr::ConstNull(loc) |
-            Expr::Ref(loc, _) |
-            Expr::Array(loc, _) |
-            Expr::StructConstructor(loc, _) |
-            Expr::Cast(loc, _, _, _) |
-            Expr::Add(loc, _, _) |
-            Expr::Sub(loc, _, _) |
-            Expr::Mul(loc, _, _) |
-            Expr::Div(loc, _, _) |
-            Expr::Concat(loc, _, _) |
-            Expr::Not(loc, _) |
-            Expr::Neg(loc, _) |
-            Expr::Deref(loc, _) |
-            Expr::Block(loc, _) |
-            Expr::Lambda(loc, _, _, _) |
-            Expr::Call(loc, _, _) |
-            Expr::If(loc, _, _, _) |
-            Expr::Eq(loc, _, _, _) |
-            Expr::Neq(loc, _, _, _) |
-            Expr::Lt(loc, _, _, _) |
-            Expr::Lte(loc, _, _, _) |
-            Expr::Gt(loc, _, _, _) |
-            Expr::Gte(loc, _, _, _) => loc.clone(),
+            Expr::Ident(loc, _)
+            | Expr::ConstBoolean(loc, _)
+            | Expr::ConstI8(loc, _)
+            | Expr::ConstU8(loc, _)
+            | Expr::ConstI16(loc, _)
+            | Expr::ConstU16(loc, _)
+            | Expr::ConstI32(loc, _)
+            | Expr::ConstU32(loc, _)
+            | Expr::ConstFloat(loc, _)
+            | Expr::ConstCompInteger(loc, _)
+            | Expr::ConstUnit(loc)
+            | Expr::ConstString(loc, _)
+            | Expr::ConstNull(loc)
+            | Expr::Ref(loc, _)
+            | Expr::Array(loc, _)
+            | Expr::StructConstructor(loc, _)
+            | Expr::Cast(loc, _, _, _)
+            | Expr::Add(loc, _, _)
+            | Expr::Sub(loc, _, _)
+            | Expr::Mul(loc, _, _)
+            | Expr::Div(loc, _, _)
+            | Expr::Concat(loc, _, _)
+            | Expr::Not(loc, _)
+            | Expr::Neg(loc, _)
+            | Expr::Deref(loc, _)
+            | Expr::Block(loc, _)
+            | Expr::Lambda(loc, _, _, _)
+            | Expr::Call(loc, _, _)
+            | Expr::If(loc, _, _, _)
+            | Expr::Eq(loc, _, _, _)
+            | Expr::Neq(loc, _, _, _)
+            | Expr::Lt(loc, _, _, _)
+            | Expr::Lte(loc, _, _, _)
+            | Expr::Gt(loc, _, _, _)
+            | Expr::Gte(loc, _, _, _) => loc.clone(),
         }
     }
 }
