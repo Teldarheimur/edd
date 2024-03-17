@@ -65,7 +65,7 @@ impl Display for PlaceExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Ident(_, i) => write!(f, "{i}"),
-            Self::Deref(_, a) => write!(f, "*{a}"),
+            Self::Deref(_, a, t) => write!(f, "*{a} (: {t})"),
             Self::Index(_, e, i) => write!(f, "{e}[{i}]"),
             Self::FieldAccess(_, e, i) => write!(f, "{e}.{i}"),
         }

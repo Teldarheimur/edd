@@ -89,7 +89,16 @@ pub fn static_eval(place: Global, t: FlatType, expr: Expr, namer: &mut StaticNam
             Ok(())
         }
         Expr::ConstCompInteger(_, num) => {
-            out.push(StaticDecl::SetConst(place, t, Const::ConstI32(num as i32)));
+            let c = match t {
+                FlatType::U8 => Const::ConstU8(num as u8),
+                FlatType::I8 => Const::ConstI8(num as i8),
+                FlatType::U16 => Const::ConstU16(num as u16),
+                FlatType::I16 => Const::ConstI16(num as i16),
+                FlatType::U32 => Const::ConstU32(num as u32),
+                FlatType::I32 => Const::ConstI32(num as i32),
+                t => unreachable!("{t}"),
+            };
+            out.push(StaticDecl::SetConst(place, t, c));
             Ok(())
         }
         Expr::ConstUnit(_) | Expr::ConstNull(_) => {
@@ -236,7 +245,7 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
 fn pl_expr_symbol_deps(pl_expr: &PlaceExpr, deps: &mut HashSet<Rc<str>>, overshadowed: &HashSet<Rc<str>>) {
     match pl_expr {
         PlaceExpr::Ident(_, name) => add_dep(name, deps, overshadowed),
-        PlaceExpr::Deref(_, e) |
+        PlaceExpr::Deref(_, e, _) |
         PlaceExpr::FieldAccess(_, e, _) => {
             expr_symbol_deps(e, deps, overshadowed);
         }

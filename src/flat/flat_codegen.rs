@@ -23,7 +23,6 @@ fn flatten_type_maybe(t: Type) -> Option<FlatType> {
     Some(match t {
         Type::Unknown(_) => unimplemented!(),
         Type::Opaque => return None,
-        Type::CompInteger => unimplemented!(),
         Type::CompString => unimplemented!(),
         Type::Unit => FlatType::Unit,
         Type::Bool => FlatType::Bool,
@@ -100,7 +99,16 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             state.add_code(Line::SetConst(place, t, Const::ConstFloat(num)));
         }
         Expr::ConstCompInteger(_, num) => {
-            state.add_code(Line::SetConst(place, t, Const::ConstI32(num as i32)));
+            let c = match t {
+                FlatType::U8 => Const::ConstU8(num as u8),
+                FlatType::I8 => Const::ConstI8(num as i8),
+                FlatType::U16 => Const::ConstU16(num as u16),
+                FlatType::I16 => Const::ConstI16(num as i16),
+                FlatType::U32 => Const::ConstU32(num as u32),
+                FlatType::I32 => Const::ConstI32(num as i32),
+                t => unreachable!("{t}"),
+            };
+            state.add_code(Line::SetConst(place, t, c));
         }
         Expr::ConstUnit(_) |
         Expr::ConstNull(_) => {
@@ -128,7 +136,15 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
         }
         Expr::Array(_, _) => todo!(),
         Expr::StructConstructor(_, _) => todo!(),
-        Expr::Cast(_, _, _, _) => todo!(),
+        Expr::Cast(_, e, from_t, to_t) => {
+            let from_t = flatten_type(*from_t);
+            let to_t = flatten_type(*to_t);
+
+            match (from_t, to_t) {
+                (t1, t2) if t1 == t2 => flatten_expr(*e, t1, place, state),
+                _ => todo!(),
+            }
+        },
         // TODO: check for overflow
         Expr::Add(_, a, b) => {
             let ta = state.new_temp("add_arg1", t.clone());
@@ -196,8 +212,8 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
         Expr::Lambda(_, args, ret, body) => {
             let lambda_g = state.new_global("lambda");
             let f = Function::init(args, ret);
-            flatten_function(lambda_g.clone(), *body, state.statics, state.fns);
             state.fns.insert(lambda_g.clone(), f);
+            flatten_function(lambda_g.clone(), *body, state.statics, state.fns);
             state.add_code(Line::ReadGlobal(place, t, lambda_g));
         }
         Expr::Call(_, f_name, args) => {
@@ -328,14 +344,14 @@ fn flatten_block(bl: Box<[Statement]>, block_t: FlatType, place: Temp, state: &m
                     }
                 }
             }
-            Statement::Rebind(_, PlaceExpr::Deref(_, ptr_e), e) => {
-                let place_ptr = state.new_temp("deref_ptr", FlatType::Ptr(None));
+            Statement::Rebind(_, PlaceExpr::Deref(_, ptr_e, inner_t), e) => {
+                let inner_t = flatten_type(*inner_t);
+                let place_ptr = state.new_temp("deref_ptr", FlatType::Ptr(Some(Box::new(inner_t.clone()))));
                 flatten_expr(*ptr_e, FlatType::Ptr(None), place_ptr.clone(), state);
-                // FIXME: GET RIGHT TYPE!
-                let t = FlatType::Unit;
+                let t = inner_t;
                 let place_val = state.new_temp("val", t.clone());
                 flatten_expr(e, t.clone(), place_val.clone(), state);
-                state.add_code(Line::WriteTo(place_ptr, t.clone(), place_val))
+                state.add_code(Line::WriteTo(place_ptr, t, place_val))
             }
             Statement::Rebind(_, PlaceExpr::FieldAccess(_, _strct_e, _ident), _e) => {
                 todo!()

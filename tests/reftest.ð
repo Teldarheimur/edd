@@ -1,11 +1,11 @@
 include("std.ðs");
 
-const kage: i32 = 10;
-static mjav: i32 = 15;
+const kage: i8 = 10;
+static mjav: i8 = 15;
 
-static reffer_x: i32 = 0;
+static reffer_x: i16 = 0;
 
-fn reffer(x: i32) *i32 {
+fn reffer(x: i16) *i16 {
     reffer_x = x;
     &reffer_x
 }
@@ -13,9 +13,9 @@ fn reffer(x: i32) *i32 {
 fn main() unit {
     mjav = kage + mjav;
     let hest = reffer(9);
-    putint(mjav - 4);
+    puti8(mjav - 4);
 
-    putint(*hest);
+    puti16(*hest);
     *hest = 42;
-    putint(*hest);
+    puti16(*hest);
 }

@@ -1,9 +1,9 @@
 include("std.ðs");
 
 fn main() i32 {
-    putint(124124);
+    puti32(124124);
 
     let f = fn(x) x * 0; // hestefest
-    putint(f(124));
+    puti32(f(124));
     f(if 5 > 2: 241241 else -1) // hest
 }

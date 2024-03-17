@@ -159,8 +159,8 @@ fn check_statements(
                 let Type::Pointer(inner_t) = ptr_t else {
                     return Err(TypeErrorType::NotPtr(ptr_t).location(loc));
                 };
-                unify_types(loc.clone(), t, *inner_t)?;
-                stmnts.push(Statement::Rebind(loc, PlaceExpr::Deref(loc2, Box::new(ptr_e)), e));
+                let t = unify_types(loc.clone(), t, *inner_t)?;
+                stmnts.push(Statement::Rebind(loc, PlaceExpr::Deref(loc2, Box::new(ptr_e), Box::new(t)), e));
             }
             UntypedStatement::Rebind(_loc, UntypedPle::Index(_loc2, arr_e, ind_e), e) => todo!("check Index({arr_e}, {ind_e}), {e})"),
             UntypedStatement::Rebind(_loc, UntypedPle::FieldAccess(_loc2, str_e, i), e) => todo!("check FieldAccess({str_e}, {i}), {e})"),
@@ -182,12 +182,44 @@ fn check_statements(
 
 fn check_literal(loc: Location, lit: &UntypedLiteral) -> (Type, Expr) {
     match lit {
-        &UntypedLiteral::Integer(i) => (Type::CompInteger, Expr::ConstCompInteger(loc, i)),
+        // TODO: check if literal can fit in candidate types
+        &UntypedLiteral::Integer(i) => {
+            let possible_types = [
+                (<i8>::MIN as i128, <i8>::MAX as i128, Type::I8),
+                (<u8>::MIN as i128, <u8>::MAX as i128, Type::U8),
+                (<i16>::MIN as i128, <i16>::MAX as i128, Type::I16),
+                (<u16>::MIN as i128, <u16>::MAX as i128, Type::U16),
+                (<i32>::MIN as i128, <i32>::MAX as i128, Type::I32),
+                (<u32>::MIN as i128, <u32>::MAX as i128, Type::U32),
+            ].into_iter()
+            .filter_map(|(min, max, t)| (min <= i && i <= max).then_some(t));
+
+            (Type::constrained(possible_types), Expr::ConstCompInteger(loc, i))
+        },
         &UntypedLiteral::Float(f) => (Type::Float, Expr::ConstFloat(loc, f)),
         &UntypedLiteral::Boolean(b) => (Type::Bool, Expr::ConstBoolean(loc, b)),
         &UntypedLiteral::Unit => (Type::Unit, Expr::ConstUnit(loc)),
         UntypedLiteral::String(s) => (Type::CompString, Expr::ConstString(loc, s.clone())),
     }
+}
+
+fn check_expr_as(expr: &UntypedExpr, state: &SymbolTable, expected_type: Type) -> Result<Expr> {
+    let (t, e) = check_expr(expr, state)?;
+    let loc = e.location();
+    let unified_type = unify_types(loc.clone(), expected_type, t.clone())?;
+    if t != unified_type {
+        Ok(Expr::Cast(loc, Box::new(e), Box::new(t), Box::new(unified_type)))
+    } else {
+        Ok(e)
+    }
+}
+
+fn check_binop_expr<F, E>(loc: &Location, a: &UntypedExpr, b: &UntypedExpr, binop_expr: F, state: &SymbolTable, operand_t: Type) -> Result<(Type, E)>
+    where F: FnOnce(Location, Box<Expr>, Box<Expr>) -> E,
+{
+    let ea = check_expr_as(a, state, operand_t.clone())?;
+    let eb = check_expr_as(b, state, operand_t.clone())?;
+    Ok((operand_t, binop_expr(loc.clone(), Box::new(ea), Box::new(eb))))
 }
 
 fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
@@ -198,79 +230,19 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
 
             Ok((t, Expr::Ident(loc.clone(), i.clone())))
         }
-        UntypedExpr::Add(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            match unify_types(loc.clone(), ta, tb)? {
-                t @ (Type::Float
-                | Type::I8
-                | Type::U8
-                | Type::I16
-                | Type::U16
-                | Type::I32
-                | Type::U32
-                | Type::CompInteger) => Ok((t, Expr::Add(loc.clone(), Box::new(ea), Box::new(eb)))),
-                t => Err(TypeErrorType::InvalidOp("add", t).location(loc.clone())),
-            }
+        UntypedExpr::Add(loc, a, b) => check_binop_expr(loc, a, b, Expr::Add, state, Type::constrained(Type::NUM)),
+        UntypedExpr::Sub(loc, a, b) => check_binop_expr(loc, a, b, Expr::Sub, state, Type::constrained(Type::NUM)),
+        UntypedExpr::Mul(loc, a, b) => check_binop_expr(loc, a, b, Expr::Mul, state, Type::constrained(Type::NUM)),
+        UntypedExpr::Div(loc, a, b) => check_binop_expr(loc, a, b, Expr::Div, state, Type::constrained(Type::NUM)),
+        UntypedExpr::Neg(loc, e) => {
+            let t = Type::constrained(Type::NUM);
+            let e = check_expr_as(e, state, t.clone())?;
+            Ok((t, Expr::Neg(loc.clone(), Box::new(e))))
         }
-        UntypedExpr::Sub(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            match unify_types(loc.clone(), ta, tb)? {
-                t @ (Type::Float
-                | Type::I8
-                | Type::U8
-                | Type::I16
-                | Type::U16
-                | Type::I32
-                | Type::U32
-                | Type::CompInteger) => Ok((t, Expr::Sub(loc.clone(), Box::new(ea), Box::new(eb)))),
-                t => Err(TypeErrorType::InvalidOp("sub", t).location(loc.clone())),
-            }
-        }
-        UntypedExpr::Mul(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            match unify_types(loc.clone(), ta, tb)? {
-                t @ (Type::Float
-                | Type::I8
-                | Type::U8
-                | Type::I16
-                | Type::U16
-                | Type::I32
-                | Type::U32
-                | Type::CompInteger) => Ok((t, Expr::Mul(loc.clone(), Box::new(ea), Box::new(eb)))),
-                t => Err(TypeErrorType::InvalidOp("mul", t).location(loc.clone())),
-            }
-        }
-        UntypedExpr::Div(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            match unify_types(loc.clone(), ta, tb)? {
-                t @ (Type::Float
-                | Type::I8
-                | Type::U8
-                | Type::I16
-                | Type::U16
-                | Type::I32
-                | Type::U32
-                | Type::CompInteger) => Ok((t, Expr::Div(loc.clone(), Box::new(ea), Box::new(eb)))),
-                t => Err(TypeErrorType::InvalidOp("div", t).location(loc.clone())),
-            }
-        }
-        UntypedExpr::Neg(loc, a) => {
-            let (t, e) = check_expr(a, state)?;
-            match t {
-                t @ (Type::Float
-                | Type::I8
-                | Type::U8
-                | Type::I16
-                | Type::U16
-                | Type::I32
-                | Type::U32
-                | Type::CompInteger) => Ok((t, Expr::Neg(loc.clone(), Box::new(e)))),
-                t => Err(TypeErrorType::InvalidOp("neg", t).location(loc.clone())),
-            }
+        UntypedExpr::Not(loc, e) => {
+            let t = Type::constrained(Type::SIMPLE);
+            let e = check_expr_as(e, state, t.clone())?;
+            Ok((t, Expr::Not(loc.clone(), Box::new(e))))
         }
         UntypedExpr::Concat(loc, a, b) => {
             let (ta, ea) = check_expr(a, state)?;
@@ -290,72 +262,23 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             let t = unify_types(loc.clone(), tt, tf)?;
             Ok((t, Expr::If(loc.clone(), Box::new(ec), Box::new(et), Box::new(ef))))
         }
-        UntypedExpr::Not(loc, b) => {
-            let (t, e) = check_expr(b, state)?;
-            match t {
-                Type::Bool => Ok((Type::Bool, Expr::Neg(loc.clone(), Box::new(e)))),
-                t => Err(TypeErrorType::InvalidOp("not", t).location(loc.clone())),
-            }
-        }
-        UntypedExpr::Eq(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            let t = unify_types(loc.clone(), ta, tb)?;
-            Ok((
-                Type::Bool,
-                Expr::Eq(loc.clone(), Box::new(ea), Box::new(eb), Box::new(t)),
-            ))
-        }
-        UntypedExpr::Neq(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            let t = unify_types(loc.clone(), ta, tb)?;
-            Ok((
-                Type::Bool,
-                Expr::Neq(loc.clone(), Box::new(ea), Box::new(eb), Box::new(t)),
-            ))
-        }
-        UntypedExpr::Lt(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            let t = unify_types(loc.clone(), ta, tb)?;
-            Ok((
-                Type::Bool,
-                Expr::Lt(loc.clone(), Box::new(ea), Box::new(eb), Box::new(t)),
-            ))
-        }
-        UntypedExpr::Lte(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            let t = unify_types(loc.clone(), ta, tb)?;
-            Ok((
-                Type::Bool,
-                Expr::Lte(loc.clone(), Box::new(ea), Box::new(eb), Box::new(t)),
-            ))
-        }
-        UntypedExpr::Gt(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            let t = unify_types(loc.clone(), ta, tb)?;
-            Ok((
-                Type::Bool,
-                Expr::Gt(loc.clone(), Box::new(ea), Box::new(eb), Box::new(t)),
-            ))
-        }
-        UntypedExpr::Gte(loc, a, b) => {
-            let (ta, ea) = check_expr(a, state)?;
-            let (tb, eb) = check_expr(b, state)?;
-            let t = unify_types(loc.clone(), ta, tb)?;
-            Ok((
-                Type::Bool,
-                Expr::Gte(loc.clone(), Box::new(ea), Box::new(eb), Box::new(t)),
-            ))
-        }
+        UntypedExpr::Eq(loc, a, b) => check_binop_expr(loc, a, b, |l, a, b| (l, a, b), state, Type::constrained(Type::SIMPLE))
+            .map(|(t, (l, a, b))| (Type::Bool, Expr::Eq(l, a, b, Box::new(t)))),
+        UntypedExpr::Neq(loc, a, b) => check_binop_expr(loc, a, b, |l, a, b| (l, a, b), state, Type::constrained(Type::SIMPLE))
+            .map(|(t, (l, a, b))| (Type::Bool, Expr::Neq(l, a, b, Box::new(t)))),
+        UntypedExpr::Lte(loc, a, b) => check_binop_expr(loc, a, b, |l, a, b| (l, a, b), state, Type::constrained(Type::SIMPLE))
+            .map(|(t, (l, a, b))| (Type::Bool, Expr::Lte(l, a, b, Box::new(t)))),
+        UntypedExpr::Lt(loc, a, b) => check_binop_expr(loc, a, b, |l, a, b| (l, a, b), state, Type::constrained(Type::SIMPLE))
+            .map(|(t, (l, a, b))| (Type::Bool, Expr::Lt(l, a, b, Box::new(t)))),
+        UntypedExpr::Gt(loc, a, b) => check_binop_expr(loc, a, b, |l, a, b| (l, a, b), state, Type::constrained(Type::SIMPLE))
+            .map(|(t, (l, a, b))| (Type::Bool, Expr::Gt(l, a, b, Box::new(t)))),
+        UntypedExpr::Gte(loc, a, b) => check_binop_expr(loc, a, b, |l, a, b| (l, a, b), state, Type::constrained(Type::SIMPLE))
+            .map(|(t, (l, a, b))| (Type::Bool, Expr::Gte(l, a, b, Box::new(t)))),
 
         UntypedExpr::Ref(loc, e) => {
             let (t, e) = check_expr(e, state)?;
+            let res = convert_expr_to_pl_expr(e, &t);
             let t = Type::Pointer(Box::new(t));
-            let res = convert_expr_to_pl_expr(e);
             Ok((t, Expr::Ref(loc.clone(), res.map_err(Box::new))))
         }
         UntypedExpr::Deref(loc, e) => {
@@ -426,10 +349,10 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
     }
 }
 
-fn convert_expr_to_pl_expr(e: Expr) -> Result<PlaceExpr, Expr> {
+fn convert_expr_to_pl_expr(e: Expr, t: &Type) -> Result<PlaceExpr, Expr> {
     match e {
         Expr::Ident(loc, ident) => Ok(PlaceExpr::Ident(loc, ident)),
-        Expr::Deref(loc, e) => Ok(PlaceExpr::Deref(loc, e)),
+        Expr::Deref(loc, e) => Ok(PlaceExpr::Deref(loc, e, Box::new(t.clone()))),
         // Expr::Index(loc, e1, e2) => Ok(PlaceExpr::Index(loc, e1, e2)),
         // Expr::FieldAccess(loc, e, ident) => Ok(PlaceExpr::FieldAccess(loc, e, ident)),
         e => Err(e),

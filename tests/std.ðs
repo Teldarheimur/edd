@@ -1,2 +1,8 @@
 extern fn puts(s: []u8) unit;
-extern fn putint(n: i32) unit;
+
+extern fn puti32(n: i32) unit;
+extern fn putu32(n: u32) unit;
+extern fn puti16(n: i16) unit;
+extern fn putu16(n: u16) unit;
+extern fn puti8 (n: i8 ) unit;
+extern fn putu8 (n: u8 ) unit;

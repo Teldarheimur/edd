@@ -29,16 +29,35 @@ impl TypeVar {
         }
     }
     pub fn constrained_type<I: IntoIterator<Item = Type>>(possible_types: I) -> Self {
+        let possible_types: HashSet<_> = possible_types.into_iter().collect();
+
+        if possible_types.len() == 1 {
+            return TypeVar {
+                inner: Rc::new(RefCell::new(Inner::Concrete(
+                    possible_types.into_iter().next().unwrap()
+                )))
+            }
+        }
+
         TypeVar {
-            inner: Rc::new(RefCell::new(Inner::Constrained(
-                possible_types.into_iter().collect(),
-            )))
+            inner: Rc::new(RefCell::new(Inner::Constrained(possible_types)))
         }
     }
     pub fn concretise(self) -> Result<Type, TypeErrorType> {
         match &*(*self.inner).borrow() {
             Inner::Concrete(t) => Ok(t.clone()),
-            Inner::Constrained(_) => Err(TypeErrorType::NonConcreteType),
+            Inner::Constrained(possible) => {
+                let arr = Type::INT;
+                let mut index = usize::MAX;
+                for t in possible {
+                    if let Some(i) = arr.iter().position(|at| at == t) {
+                        index = i.min(index);
+                    } else {
+                        return Err(TypeErrorType::NonConcreteType);
+                    }
+                }
+                arr.get(index).cloned().ok_or(TypeErrorType::NonConcreteType)
+            },
             Inner::Any => Err(TypeErrorType::NonConcreteType),
             Inner::Alias(tv) => tv.clone().concretise(),
         }
@@ -63,11 +82,27 @@ impl TypeVar {
         Ok(t)
     }
     pub fn merge(&self, loc: Location, other: &Self) -> Result<Self> {
+        if self == other {
+            // This is both an optimisation and to prevent panics
+            // from branches that borrow_mut on both
+            return Ok(self.clone())
+        }
+
         let s = RefCell::borrow(&self.inner);
         let o = RefCell::borrow(&other.inner);
         match (&*s, &*o) {
-            (Inner::Alias(tv), _) => tv.merge(loc, other),
-            (_, Inner::Alias(tv)) => self.merge(loc, tv),
+            (Inner::Alias(tv), _) => {
+                // This clone is neccesary because otherwise we are keeping the Ref from `s`
+                let tv = tv.clone();
+                drop((s, o));
+                tv.merge(loc, &other)
+            }
+            (_, Inner::Alias(tv)) => {
+                // This clone is neccesary because otherwise we are keeping the Ref from `o`
+                let tv = tv.clone();
+                drop((s, o));
+                self.merge(loc, &tv)
+            }
             (_, Inner::Any) => {
                 drop((s, o));
                 *RefCell::borrow_mut(&other.inner) = Inner::Alias(self.clone());

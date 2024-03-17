@@ -75,7 +75,7 @@ impl Sub for Value {
             (Value::I32(i1), Value::I32(i2)) => Value::I32(i1.wrapping_sub(i2)),
             (Value::U32(i1), Value::U32(i2)) => Value::U32(i1.wrapping_sub(i2)),
             (Value::Float(f1), Value::Float(f2)) => Value::Float(f1 - f2),
-            (a, b) => unreachable!("tried to subtract {a} by {b}"),
+            (a, b) => unreachable!("tried to subtract {a:?} by {b:?}"),
         }
     }
 }

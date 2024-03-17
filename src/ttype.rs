@@ -26,7 +26,6 @@ pub enum Type {
     I16,
     U32,
     I32,
-    CompInteger,
     CompString,
 
     /// limited support
@@ -47,6 +46,37 @@ impl Type {
     fn any() -> Type {
         Type::Unknown(TypeVar::any_type())
     }
+    #[inline(always)]
+    fn constrained<I: IntoIterator<Item = Type>>(possible_types: I) -> Type {
+        Type::Unknown(TypeVar::constrained_type(possible_types))
+    }
+    const INT: [Type; 6] = [
+        Type::I8,
+        Type::U8,
+        Type::I16,
+        Type::U16,
+        Type::I32,
+        Type::U32,
+    ];
+    const NUM: [Type; 7] = [
+        Type::Float,
+        Type::I8,
+        Type::U8,
+        Type::I16,
+        Type::U16,
+        Type::I32,
+        Type::U32,
+    ];
+    const SIMPLE: [Type; 8] = [
+        Type::Bool,
+        Type::Float,
+        Type::I8,
+        Type::U8,
+        Type::I16,
+        Type::U16,
+        Type::I32,
+        Type::U32,
+    ];
 }
 
 impl Display for Type {
@@ -62,7 +92,6 @@ impl Display for Type {
             Type::I16 => write!(f, "i16"),
             Type::U32 => write!(f, "u32"),
             Type::I32 => write!(f, "i32"),
-            Type::CompInteger => write!(f, "comp_int"),
             Type::CompString => write!(f, "comp_string"),
             Type::Float => write!(f, "float"),
             Type::Unit => write!(f, "unit"),
@@ -152,12 +181,6 @@ pub fn unify_types(loc: Location, exp: Type, act: Type) -> Result<Type> {
             Ok(Type::Unknown(t1.merge(loc, &t2)?))
         }
         (t, Unknown(tv)) | (Unknown(tv), t) => tv.merge_with_type(loc, t),
-        (a @ I8, CompInteger) | (CompInteger, a @ I8) => Ok(a),
-        (a @ U8, CompInteger) | (CompInteger, a @ U8) => Ok(a),
-        (a @ I16, CompInteger) | (CompInteger, a @ I16) => Ok(a),
-        (a @ U16, CompInteger) | (CompInteger, a @ U16) => Ok(a),
-        (a @ I32, CompInteger) | (CompInteger, a @ I32) => Ok(a),
-        (a @ U32, CompInteger) | (CompInteger, a @ U32) => Ok(a),
         (Array(t1, s1), Array(t2, s2)) => {
             if s1 != s2 {
                 return Err(TypeErrorType::UnequalArraySizes(s1, s2).location(loc));

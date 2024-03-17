@@ -1,11 +1,11 @@
 include("std.ðs");
 
-fn fibo(n: i32) i32 {
+fn fibo(n: u32) u32 {
     if n <= 1: n
     else fibo(n - 1) + fibo(n - 2)
 }
 
 fn main() unit {
-    let n: i32 = 30;
-    putint(fibo(n));
+    let n = 30;
+    putu32(fibo(n));
 }

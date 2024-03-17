@@ -28,7 +28,7 @@ pub enum Statement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlaceExpr {
     Ident(Location, Rc<str>),
-    Deref(Location, Box<Expr>),
+    Deref(Location, Box<Expr>, Box<Type>),
     Index(Location, Box<Expr>, Box<Expr>),
     FieldAccess(Location, Box<Expr>, Rc<str>),
 }
@@ -77,71 +77,44 @@ pub enum Expr {
     Gte(Location, Box<Self>, Box<Self>, Box<Type>),
 }
 
-#[allow(dead_code)]
 impl Expr {
-    fn spanned(self, loc: Location) -> Self {
+    pub(crate) fn location(&self) -> Location {
         match self {
-            Expr::Ident(_, a) => Expr::Ident(loc, a),
-            Expr::ConstBoolean(_, a) => Expr::ConstBoolean(loc, a),
-            Expr::ConstI8(_, a) => Expr::ConstI8(loc, a),
-            Expr::ConstU8(_, a) => Expr::ConstU8(loc, a),
-            Expr::ConstI16(_, a) => Expr::ConstI16(loc, a),
-            Expr::ConstU16(_, a) => Expr::ConstU16(loc, a),
-            Expr::ConstI32(_, a) => Expr::ConstI32(loc, a),
-            Expr::ConstU32(_, a) => Expr::ConstU32(loc, a),
-            Expr::ConstFloat(_, a) => Expr::ConstFloat(loc, a),
-            Expr::ConstCompInteger(_, a) => Expr::ConstCompInteger(loc, a),
-            Expr::ConstUnit(_) => Expr::ConstUnit(loc),
-            Expr::ConstString(_, a) => Expr::ConstString(loc, a),
-            Expr::ConstNull(_) => Expr::ConstNull(loc),
-            Expr::Ref(_, a) => Expr::Ref(loc, a),
-            Expr::Array(_, a) => Expr::Array(loc, a),
-            Expr::StructConstructor(_, a) => Expr::StructConstructor(loc, a),
-            Expr::Cast(_, a, b, c) => Expr::Cast(loc, a, b, c),
-            Expr::Add(_, a, b) => Expr::Add(loc, a, b),
-            Expr::Sub(_, a, b) => Expr::Sub(loc, a, b),
-            Expr::Mul(_, a, b) => Expr::Mul(loc, a, b),
-            Expr::Div(_, a, b) => Expr::Div(loc, a, b),
-            Expr::Concat(_, a, b) => Expr::Concat(loc, a, b),
-            Expr::Not(_, a) => Expr::Not(loc, a),
-            Expr::Neg(_, a) => Expr::Neg(loc, a),
-            Expr::Deref(_, a) => Expr::Deref(loc, a),
-            Expr::Block(_, a) => Expr::Block(loc, a),
-            Expr::Lambda(_, a, b, c) => Expr::Lambda(loc, a, b, c),
-            Expr::Call(_, a, b) => Expr::Call(loc, a, b),
-            Expr::If(loc, a, b, c) => Expr::If(loc, a, b, c),
-            Expr::Eq(loc, a, b, c) => Expr::Eq(loc, a, b, c),
-            Expr::Neq(_, a, b, c) => Expr::Neq(loc, a, b, c),
-            Expr::Lt(loc, a, b, c) => Expr::Lt(loc, a, b, c),
-            Expr::Lte(_, a, b, c) => Expr::Lte(loc, a, b, c),
-            Expr::Gt(loc, a, b, c) => Expr::Gt(loc, a, b, c),
-            Expr::Gte(_, a, b, c) => Expr::Gte(loc, a, b, c),
-        }
-    }
-    fn is_const_zero(&self) -> bool {
-        match self {
-            Expr::ConstU8(_, 0)
-            | Expr::ConstI8(_, 0)
-            | Expr::ConstU16(_, 0)
-            | Expr::ConstI16(_, 0)
-            | Expr::ConstU32(_, 0)
-            | Expr::ConstI32(_, 0)
-            | Expr::ConstCompInteger(_, 0) => true,
-            Expr::ConstFloat(_, f) => f.abs() < f64::EPSILON,
-            _ => false,
-        }
-    }
-    fn is_const_one(&self) -> bool {
-        match self {
-            Expr::ConstU8(_, 1)
-            | Expr::ConstI8(_, 1)
-            | Expr::ConstU16(_, 1)
-            | Expr::ConstI16(_, 1)
-            | Expr::ConstU32(_, 1)
-            | Expr::ConstI32(_, 1)
-            | Expr::ConstCompInteger(_, 1) => true,
-            Expr::ConstFloat(_, f) => (f - 1.).abs() < f64::EPSILON,
-            _ => false,
+            Expr::Ident(loc, _) |
+            Expr::ConstBoolean(loc, _) |
+            Expr::ConstI8(loc, _) |
+            Expr::ConstU8(loc, _) |
+            Expr::ConstI16(loc, _) |
+            Expr::ConstU16(loc, _) |
+            Expr::ConstI32(loc, _) |
+            Expr::ConstU32(loc, _) |
+            Expr::ConstFloat(loc, _) |
+            Expr::ConstCompInteger(loc, _) |
+            Expr::ConstUnit(loc) |
+            Expr::ConstString(loc, _) |
+            Expr::ConstNull(loc) |
+            Expr::Ref(loc, _) |
+            Expr::Array(loc, _) |
+            Expr::StructConstructor(loc, _) |
+            Expr::Cast(loc, _, _, _) |
+            Expr::Add(loc, _, _) |
+            Expr::Sub(loc, _, _) |
+            Expr::Mul(loc, _, _) |
+            Expr::Div(loc, _, _) |
+            Expr::Concat(loc, _, _) |
+            Expr::Not(loc, _) |
+            Expr::Neg(loc, _) |
+            Expr::Deref(loc, _) |
+            Expr::Block(loc, _) |
+            Expr::Lambda(loc, _, _, _) |
+            Expr::Call(loc, _, _) |
+            Expr::If(loc, _, _, _) |
+            Expr::Eq(loc, _, _, _) |
+            Expr::Neq(loc, _, _, _) |
+            Expr::Lt(loc, _, _, _) |
+            Expr::Lte(loc, _, _, _) |
+            Expr::Gt(loc, _, _, _) |
+            Expr::Gte(loc, _, _, _) => loc.clone(),
         }
     }
 }

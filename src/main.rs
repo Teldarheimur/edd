@@ -59,18 +59,20 @@ fn main() {
 fn run_prgm(program: Program) -> Result<Value, RuntimeError> {
     let mut symtab = SymbolTable::new();
 
-    symtab.add_func("puts", |vls| {
-        for vl in &*vls {
-            println!("{vl}");
-        }
-        Value::Naught
-    });
-    symtab.add_func("putint", |vls| {
-        for vl in &*vls {
-            println!("{vl}");
-        }
-        Value::Naught
-    });
+    symtab.add_func("puts", put);
+    symtab.add_func("putu32", put);
+    symtab.add_func("puti32", put);
+    symtab.add_func("puti16", put);
+    symtab.add_func("putu16", put);
+    symtab.add_func("puti8", put);
+    symtab.add_func("putu8", put);
 
     run(program, &mut symtab)
+}
+
+fn put(vls: Box<[Value]>) -> Value {
+    for vl in &*vls {
+        println!("{vl}");
+    }
+    Value::Naught
 }
