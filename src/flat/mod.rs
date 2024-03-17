@@ -120,6 +120,7 @@ pub struct Program {
 }
 #[derive(Debug, Clone)]
 pub enum StaticDecl {
+    /// TODO: have a way to mark a global as immutable again
     SetConst(Global, FlatType, Const),
     SetAlias(Global, FlatType, Global),
     SetArray(Global, FlatType, Box<[Const]>),
