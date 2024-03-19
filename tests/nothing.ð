@@ -7,7 +7,7 @@ fn test() i16 {
     let b = 124;
     let c = a + A;
     let d = c + b;
-    5
+    a
 }
 
 fn main() unit {

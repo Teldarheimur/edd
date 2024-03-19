@@ -62,6 +62,7 @@ pub enum Ident {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Temp(usize);
 impl Temp {
+    pub const ZERO: Self = Temp(0);
     pub(crate) fn inner(&self) -> usize {
         self.0
     }
@@ -120,7 +121,7 @@ pub struct Program {
 }
 #[derive(Debug, Clone)]
 pub enum StaticDecl {
-    /// TODO: have a way to mark a global as immutable again
+    // TODO: have a way to mark a global as immutable again
     SetConst(Global, FlatType, Const),
     SetAlias(Global, FlatType, Global),
     SetArray(Global, FlatType, Box<[Const]>),

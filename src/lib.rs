@@ -9,6 +9,9 @@ pub mod flat;
 pub mod parse;
 pub mod rt;
 pub mod ttype;
+pub mod telda;
+pub mod small_set;
+pub mod regalloc;
 
 #[track_caller]
 fn get_only_one<R, I: Iterator<Item = R>>(mut iter: I) -> R {

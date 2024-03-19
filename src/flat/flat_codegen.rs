@@ -273,54 +273,54 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             let tl = state.new_temp("eq_arg1", op_t.clone());
             flatten_expr(*l, op_t.clone(), tl.clone(), state);
             let tr = state.new_temp("eq_arg2", op_t.clone());
-            flatten_expr(*r, op_t, tr.clone(), state);
+            flatten_expr(*r, op_t.clone(), tr.clone(), state);
 
-            state.add_code(Line::SetBinop(place, t, Binop::Eq, tl, tr));
+            state.add_code(Line::SetBinop(place, op_t, Binop::Eq, tl, tr));
         }
         Expr::Neq(_, l, r, op_t) => {
             let op_t = flatten_type(*op_t);
             let tl = state.new_temp("neq_arg1", op_t.clone());
             flatten_expr(*l, op_t.clone(), tl.clone(), state);
             let tr = state.new_temp("neq_arg2", op_t.clone());
-            flatten_expr(*r, op_t, tr.clone(), state);
+            flatten_expr(*r, op_t.clone(), tr.clone(), state);
 
-            state.add_code(Line::SetBinop(place, t, Binop::Neq, tl, tr));
+            state.add_code(Line::SetBinop(place, op_t, Binop::Neq, tl, tr));
         }
         Expr::Lt(_, l, r, op_t) => {
             let op_t = flatten_type(*op_t);
             let tl = state.new_temp("lt_arg1", op_t.clone());
             flatten_expr(*l, op_t.clone(), tl.clone(), state);
             let tr = state.new_temp("lt_arg2", op_t.clone());
-            flatten_expr(*r, op_t, tr.clone(), state);
+            flatten_expr(*r, op_t.clone(), tr.clone(), state);
 
-            state.add_code(Line::SetBinop(place, t, Binop::Lt, tl, tr));
+            state.add_code(Line::SetBinop(place, op_t, Binop::Lt, tl, tr));
         }
         Expr::Lte(_, l, r, op_t) => {
             let op_t = flatten_type(*op_t);
             let tl = state.new_temp("lte_arg1", op_t.clone());
             flatten_expr(*l, op_t.clone(), tl.clone(), state);
             let tr = state.new_temp("lte_arg2", op_t.clone());
-            flatten_expr(*r, op_t, tr.clone(), state);
+            flatten_expr(*r, op_t.clone(), tr.clone(), state);
 
-            state.add_code(Line::SetBinop(place, t, Binop::Lte, tl, tr));
+            state.add_code(Line::SetBinop(place, op_t, Binop::Lte, tl, tr));
         }
         Expr::Gt(_, l, r, op_t) => {
             let op_t = flatten_type(*op_t);
             let tl = state.new_temp("gt_arg1", op_t.clone());
             flatten_expr(*l, op_t.clone(), tl.clone(), state);
             let tr = state.new_temp("gt_arg2", op_t.clone());
-            flatten_expr(*r, op_t, tr.clone(), state);
+            flatten_expr(*r, op_t.clone(), tr.clone(), state);
 
-            state.add_code(Line::SetBinop(place, t, Binop::Gt, tl, tr));
+            state.add_code(Line::SetBinop(place, op_t, Binop::Gt, tl, tr));
         }
         Expr::Gte(_, l, r, op_t) => {
             let op_t = flatten_type(*op_t);
             let tl = state.new_temp("gte_arg1", op_t.clone());
             flatten_expr(*l, op_t.clone(), tl.clone(), state);
             let tr = state.new_temp("gte_arg2", op_t.clone());
-            flatten_expr(*r, op_t, tr.clone(), state);
+            flatten_expr(*r, op_t.clone(), tr.clone(), state);
 
-            state.add_code(Line::SetBinop(place, t, Binop::Gte, tl, tr));
+            state.add_code(Line::SetBinop(place, op_t, Binop::Gte, tl, tr));
         }
     }
 }

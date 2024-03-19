@@ -156,7 +156,7 @@ fn remove_unused_locals(program: &mut Program) {
             }
         }
         let references = references;
-        let mut queue = queue;
+        // let mut queue = queue;
         let upper = queue.iter().copied()
             .max().unwrap().max(upper);
 
