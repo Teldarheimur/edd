@@ -17,10 +17,17 @@ impl<T> SmallSet<T> {
     pub fn len(&self) -> usize {
         self.inner.len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.inner.iter()
     }
-    pub fn into_iter(self) -> impl Iterator<Item = T> {
+}
+impl<T> IntoIterator for SmallSet<T> {
+    type Item = T;
+    type IntoIter = <Vec<T> as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
         self.inner.into_iter()
     }
 }
@@ -42,11 +49,6 @@ impl<T: Eq> SmallSet<T> {
     pub fn contains(&self, elem: &T) -> bool {
         self.inner.contains(elem)
     }
-    pub fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
-        let mut ret = SmallSet::new();
-        ret.extend(iter.into_iter());
-        ret
-    }
     pub fn extend(&mut self, iter: impl Iterator<Item=T>) {
         for elem in iter {
             self.add(elem);
@@ -62,5 +64,12 @@ impl<T: Eq> SmallSet<T> {
             self.remove(elem);
         }
         self
+    }
+}
+impl<T: Eq> FromIterator<T> for SmallSet<T> {
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
+        let mut ret = SmallSet::new();
+        ret.extend(iter.into_iter());
+        ret
     }
 }

@@ -112,8 +112,8 @@ fn run_prgm(program: Program) -> Result<Value, RuntimeError> {
     run(program, &mut symtab)
 }
 
-fn put(vls: Box<[Value]>) -> Value {
-    for vl in &*vls {
+fn put(vls: &[Value]) -> Value {
+    for vl in vls {
         println!("{vl}");
     }
     Value::Naught

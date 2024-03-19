@@ -29,7 +29,7 @@ pub enum Value {
     Float(f64),
 
     Function(Rc<[Line]>),
-    BuiltinFn(fn(Box<[Value]>) -> Value),
+    BuiltinFn(fn(&[Value]) -> Value),
     Ref(Ident),
 
     Naught,
@@ -91,7 +91,7 @@ impl SymbolTable {
     pub fn iter(&self) -> impl Iterator<Item = (&Rc<str>, &RefCell<Value>)> {
         self.map.iter()
     }
-    pub fn add_func<S: Into<Rc<str>>>(&mut self, name: S, f: fn(Box<[Value]>) -> Value) {
+    pub fn add_func<S: Into<Rc<str>>>(&mut self, name: S, f: fn(&[Value]) -> Value) {
         self.add_var(name, Value::BuiltinFn(f))
     }
     pub fn add_var<S: Into<Rc<str>>>(&mut self, name: S, val: Value) {
@@ -227,9 +227,9 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
 
                 let val;
                 if let Value::BuiltinFn(f) = f {
-                    let args = args.iter().map(|arg| state.lookup(arg.clone())).collect();
+                    let args: Box<[_]> = args.iter().map(|arg| state.lookup(arg.clone())).collect();
 
-                    val = f(args);
+                    val = f(&args);
                 } else if let Value::Function(f_lines) = f {
                     let mut f_rs = RuntimeState::with_args(
                         state.globals,
