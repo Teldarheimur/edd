@@ -13,7 +13,6 @@ use super::{
 pub fn register_allocate<L, I, R, S, P, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize>(
     mut body: VecView<I>,
     conv: &CallingConvention<P, CALLER_SAVE_LEN, CALLEE_SAVE_LEN>,
-    rets: &[R],
 )
     where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, I: Ins<R, L>, P: Copy + Eq + Hash, S: Clone + Eq + Hash
 {
@@ -24,7 +23,7 @@ pub fn register_allocate<L, I, R, S, P, const CALLER_SAVE_LEN: usize, const CALL
 
     let mut instance = conv.allocator();
 
-    register_allocate_inner(&mut body, rets.iter().cloned().collect(), &mut instance);
+    register_allocate_inner(&mut body, &mut instance);
 
     // Save registers
     for reg in instance.regs_to_save() {
@@ -45,7 +44,6 @@ pub fn register_allocate<L, I, R, S, P, const CALLER_SAVE_LEN: usize, const CALL
 
 fn register_allocate_inner<L, R, P, I, S, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize>(
     body: &mut VecView<I>,
-    rets: Vec<R>,
     alloc_ins: &mut AllocatorInstance<P, CALLER_SAVE_LEN, CALLEE_SAVE_LEN>,
 )
     where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, P: Copy + Eq + Hash, I: Ins<R, L>, S: Clone + Eq + Hash
@@ -53,7 +51,7 @@ fn register_allocate_inner<L, R, P, I, S, const CALLER_SAVE_LEN: usize, const CA
     // Make interference graph
     let mut interference = HashMap::new();
 
-    let (kill, in_, out) = analysis(&body);
+    let (kill, in_, out) = analysis(body);
 
     for in_set in in_ {
         for var in in_set.iter() {
@@ -82,11 +80,10 @@ fn register_allocate_inner<L, R, P, I, S, const CALLER_SAVE_LEN: usize, const CA
         let node = if let Some((node, _)) = interference.iter().find(|(_, with)| with.len() < limit) {
             node.clone()
         } else {
-            if let Some(key) = interference.keys().next() {
-                key.clone()
-            } else {
+            let Some(key) = interference.keys().next() else {
                 break;
-            }
+            };
+            key.clone()
         };
 
         let (reg, neighbours) = interference.remove_entry(&node).unwrap();
@@ -156,10 +153,9 @@ fn register_allocate_inner<L, R, P, I, S, const CALLER_SAVE_LEN: usize, const CA
         for ins in &mut body[..] {
             rename_instruction(ins, &renames);
         }
-        return;
     } else {
         spill(body, spilled, alloc_ins);
-        register_allocate_inner(body, rets, alloc_ins.unalloc_regs())
+        register_allocate_inner(body, alloc_ins.unalloc_regs())
     }
 }
 

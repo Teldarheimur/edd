@@ -276,7 +276,7 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 }
             },
             Line::SetTo(t1, ty, t2) => {
-                let dest_regs: Vec<_> = state.get(&t1, Some(&ty)).iter().copied().collect();
+                let dest_regs: Vec<_> = state.get(&t1, Some(&ty)).to_vec();
                 for (dest, src) in dest_regs
                     .into_iter()
                     .zip(state.get(&t2, Some(&ty)).iter().copied())
@@ -445,8 +445,8 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
 
                 // set arguments
                 let mut regs = Vec::new();
-                for arg in arguments.into_iter() {
-                    for &reg in state.get(arg, None) {
+                for arg in arguments.into_vec() {
+                    for &reg in state.get(&arg, None) {
                         regs.push(reg);
                     }
                 }

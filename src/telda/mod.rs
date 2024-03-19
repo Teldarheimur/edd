@@ -33,7 +33,7 @@ fn apply_register_allocation(code: &mut Vec<Ins>) {
         let fn_len = code[start..].iter().position(|l| matches!(l, Ins::FunctionEndMarker)).unwrap();
         let end = start + fn_len + 1;
 
-        register_allocate(VecView::new(code, start+2, end-1), &impl_regalloc::CONV, &[]);
+        register_allocate(VecView::new(code, start+2, end-1), &impl_regalloc::CONV);
 
         start = end;
     }

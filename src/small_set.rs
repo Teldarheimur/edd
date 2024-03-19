@@ -40,7 +40,7 @@ impl<T: Eq> SmallSet<T> {
         }
     }
     pub fn contains(&self, elem: &T) -> bool {
-        self.inner.contains(&elem)
+        self.inner.contains(elem)
     }
     pub fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
         let mut ret = SmallSet::new();
