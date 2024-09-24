@@ -1,9 +1,5 @@
 use std::{
-    cell::RefCell,
-    cmp::Ordering,
-    collections::{BTreeMap, HashMap},
-    iter,
-    rc::Rc,
+    cell::RefCell, cmp::Ordering, collections::{BTreeMap, HashMap}, fmt::{self, Display}, iter, ops::Add, rc::Rc
 };
 
 use crate::flat::{Binop, Const, Global, Ident, Label, Line, Program, StaticDecl, Temp, Unop};
@@ -30,9 +26,33 @@ pub enum Value {
 
     Function(Rc<[Line]>),
     BuiltinFn(fn(&[Value]) -> Value),
-    Ref(Ident),
-
+    Ref(Address),
+    
     Naught,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum Address {
+    Stack(usize),
+    Static(usize),
+}
+
+impl Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Address::Stack(i) => write!(f, "{{$stack+{i}}}"),
+            Address::Static(i) => write!(f, "{{$static+{i}}}"),
+        }
+    }
+}
+
+impl Add<u16> for Address {
+    type Output = Self;
+    fn add(self, rhs: u16) -> Self::Output {
+        match self {
+            Address::Stack(i) => Address::Stack(i + rhs as usize),
+            Address::Static(i) => Address::Static(i + rhs as usize),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -42,69 +62,122 @@ pub enum SymbolError {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SymbolTable {
-    map: HashMap<Rc<str>, RefCell<Value>>,
+pub struct Store {
+    /// Static storage
+    global_values: Vec<RefCell<Value>>,
+    /// Symbols to the static storage
+    global_symtab: HashMap<Rc<str>, usize>,
+    /// Automatic storage
+    stack: RefCell<Vec<Value>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct RuntimeState<'a> {
-    globals: &'a SymbolTable,
-    stack: Vec<Value>,
+    store: &'a Store,
+    /// Register storage (cannot be referenced)
+    registers: Vec<Value>,
 }
 
 impl<'a> RuntimeState<'a> {
-    pub fn with_args(globals: &'a SymbolTable, args: impl Iterator<Item = Value>) -> Self {
+    pub fn with_args(store: &'a Store, args: impl Iterator<Item = Value>) -> Self {
         Self {
-            globals,
-            stack: iter::once(Value::Naught).chain(args).collect(),
+            store,
+            registers: iter::once(Value::Naught).chain(args).collect(),
         }
     }
     pub const fn new(&self) -> Self {
         Self {
-            globals: self.globals,
-            stack: Vec::new(),
+            store: self.store,
+            registers: Vec::new(),
+        }
+    }
+    pub fn get_addr<I: Into<Ident>>(&self, ident: I) -> Address {
+        match ident.into() {
+            Ident::Global(g) => Address::Static(self.store.global_symtab[g.inner()]),
+            Ident::Stack(s) => Address::Stack(s.inner())
         }
     }
     pub fn set_global(&mut self, g: Global, val: Value) {
-        self.globals.mutate(g.inner(), val)
+        self.store.mutate(g.inner(), val)
     }
     pub fn set_temp(&mut self, temp: Temp, val: Value) {
         let index = temp.inner();
-        if self.stack.len() <= index {
-            self.stack.resize(index + 1, Value::Naught);
+        if self.registers.len() <= index {
+            self.registers.resize(index + 1, Value::Naught);
         }
-        self.stack[index] = val;
+        self.registers[index] = val;
+    }
+    pub fn read_addr(&self, addr: Address) -> Value {
+        match addr {
+            Address::Static(i) => self.store.global_values[i].borrow().clone(),
+            Address::Stack(i) => self.registers[i].clone(),
+        }
+    }
+    pub fn write_addr(&mut self, addr: Address, val: Value) {
+        match addr {
+            Address::Static(i) => *self.store.global_values[i].borrow_mut() = val,
+            Address::Stack(i) => self.registers[i] = val,
+        }
     }
     pub fn lookup<I: Into<Ident>>(&self, ident: I) -> Value {
         match ident.into() {
-            Ident::Global(g) => self.globals.lookup(g.inner()),
-            Ident::Temp(t) => self.stack[t.inner()].clone(),
+            Ident::Global(g) => self.store.lookup(g.inner()),
+            Ident::Temp(t) => self.registers[t.inner()].clone(),
         }
     }
 }
 
-impl SymbolTable {
+impl Store {
     #[inline]
     pub fn new() -> Self {
         Self::default()
-    }
-    pub fn iter(&self) -> impl Iterator<Item = (&Rc<str>, &RefCell<Value>)> {
-        self.map.iter()
     }
     pub fn add_func<S: Into<Rc<str>>>(&mut self, name: S, f: fn(&[Value]) -> Value) {
         self.add_var(name, Value::BuiltinFn(f))
     }
     pub fn add_var<S: Into<Rc<str>>>(&mut self, name: S, val: Value) {
         let name = name.into();
+        
+        let index = self.global_values.len();
+        self.global_values.push(RefCell::new(val));
+        self.global_symtab.insert(name, index);
+    }
+    pub fn add_array<S: Into<Rc<str>>>(&mut self, name: S, vals: impl Iterator<Item=Value>) {
+        let name = name.into();
+        let index = self.global_values.len();
+        self.global_symtab.insert(name, index);
 
-        self.map.insert(name, RefCell::new(val));
+        self.global_values.extend(vals.map(RefCell::new));
     }
     pub fn lookup(&self, name: &str) -> Value {
-        self.map[name].borrow().clone()
+        let index = self.global_symtab[name];
+        self.global_values[index].borrow().clone()
+    }
+    pub fn lookup_with_offset(&self, name: &str, offset: u16) -> Value {
+        let index = self.global_symtab[name] + offset as usize;
+        self.global_values[index].borrow().clone()
     }
     pub fn mutate(&self, name: &str, new_val: Value) {
-        let var = &self.map[name];
+        let index = self.global_symtab[name];
+        let var = &self.global_values[index];
         *var.borrow_mut() = new_val;
+    }
+    pub fn mutate_with_offset(&self, name: &str, new_val: Value, offset: u16) {
+        let index = self.global_symtab[name] + offset as usize;
+        let var = &self.global_values[index];
+        *var.borrow_mut() = new_val;
+    }
+
+    pub fn stack_alloc(&self, count: usize) -> usize {
+        let mut stack = self.stack.borrow_mut();
+        let index = stack.len();
+        stack.resize(index+count, Value::Naught);
+        index
+    }
+    pub fn stack_free(&self, count: usize) {
+        let mut stack = self.stack.borrow_mut();
+        let size = stack.len();
+        stack.resize_with(size-count, || unreachable!());
     }
 }
 
@@ -122,33 +195,35 @@ const fn const_to_val(c: Const) -> Value {
     }
 }
 
-pub fn run(program: Program, symtab: &mut SymbolTable) -> Result<Value, RuntimeError> {
+pub fn run(program: Program, gs: &mut Store) -> Result<Value, RuntimeError> {
     for static_decl in program.statics {
         match static_decl {
-            StaticDecl::SetConst(n, _, val) => symtab.add_var(n.into_inner(), const_to_val(val)),
+            StaticDecl::SetConst(n, _, val) => gs.add_var(n.into_inner(), const_to_val(val)),
             StaticDecl::SetAlias(n, _, val) => {
-                let val = symtab.lookup(val.inner());
-                symtab.add_var(n.into_inner(), val);
+                let val = gs.lookup(val.inner());
+                gs.add_var(n.into_inner(), val);
             }
             StaticDecl::SetString(n, _, val) => {
-                symtab.add_var(n.into_inner(), Value::String(val.into()));
+                gs.add_var(n.into_inner(), Value::String(val.into()));
             }
-            StaticDecl::SetArray(_n, _, _val) => todo!(),
+            StaticDecl::SetArray(n, _, vals) => {
+                gs.add_array(n.into_inner(), vals.into_vec().into_iter().map(const_to_val));
+            }
             StaticDecl::SetPtr(n, _, val) => {
-                let val = Value::Ref(val.into());
-                symtab.add_var(n.into_inner(), val);
+                let ptr = Value::Ref(Address::Static(gs.global_symtab[val.inner()]));
+                gs.add_var(n.into_inner(), ptr);
             }
             StaticDecl::External(n, _) => {
-                let _ = symtab.lookup(n.inner());
+                let _ = gs.lookup(n.inner());
             }
         }
     }
     for (n, f) in program.fns {
-        symtab.add_var(n.into_inner(), Value::Function(f.lines.into()));
+        gs.add_var(n.into_inner(), Value::Function(f.lines.into()));
     }
-    match symtab.lookup("main") {
+    match gs.lookup("main") {
         Value::Function(body) => {
-            let mut rs = RuntimeState::with_args(symtab, [].into_iter());
+            let mut rs = RuntimeState::with_args(gs, [].into_iter());
             run_lines(&body, &mut rs)
         }
         _ => Err(RuntimeError::InvalidMain),
@@ -205,7 +280,8 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 state.set_temp(dest.clone(), val);
             }
             Line::SetAddrOf(dest, _, src) => {
-                state.set_temp(dest.clone(), Value::Ref(src.clone()));
+                let ptr = state.get_addr(src.clone());
+                state.set_temp(dest.clone(), Value::Ref(ptr));
             }
             Line::SetUnop(dest, _, unop, operand) => {
                 let operand = state.lookup(operand.clone());
@@ -216,7 +292,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                     },
                     Unop::Neg => -operand,
                     Unop::Deref => match operand {
-                        Value::Ref(r) => state.lookup(r),
+                        Value::Ref(addr) => state.read_addr(addr),
                         _ => unreachable!(),
                     },
                 };
@@ -232,7 +308,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                     val = f(&args);
                 } else if let Value::Function(f_lines) = f {
                     let mut f_rs = RuntimeState::with_args(
-                        state.globals,
+                        state.store,
                         args.iter().map(|arg| state.lookup(arg.clone())),
                     );
 
@@ -266,19 +342,33 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 let val = state.lookup(src.clone());
                 state.set_temp(dest.clone(), val)
             }
-            Line::WriteTo(dest_ptr, _, src) => {
+            Line::WriteTo(dest_ptr, offset, _, src) => {
                 let val = state.lookup(src.clone());
-
-                let ptr = state.lookup(dest_ptr.clone());
-                let Value::Ref(v) = ptr else {
-                    unreachable!();
+                let index = match state.lookup(offset.clone()) {
+                    Value::Naught => 0,
+                    Value::U16(i) => i,
+                    _ => unreachable!(),
                 };
-                match v {
-                    Ident::Global(g) => state.set_global(g, val),
-                    Ident::Temp(t) => state.set_temp(t, val),
-                }
+
+                let addr = state.get_addr(dest_ptr.clone()) + index;
+
+                state.write_addr(addr, val);
             }
-            Line::SetIndex(_, _, _) => todo!(),
+            Line::ReadFrom(dest, _, src_ptr, offset) => {
+                let index = match state.lookup(offset.clone()) {
+                    Value::Naught => 0,
+                    Value::U16(i) => i,
+                    _ => unreachable!(),
+                };
+                let addr = state.get_addr(src_ptr.clone()) + index;
+
+                let val = state.read_addr(addr);
+
+                state.set_temp(dest.clone(), val);
+            }
+            Line::SetArray(place, size, _item_type) => {
+                todo!("make sure stack has skipped the {size} values and write the start addr into {}", place.display());
+            }
             Line::Panic(msg) => {
                 return Err(RuntimeError::Panic(msg.clone()));
             }

@@ -106,13 +106,14 @@ fn mark_fns(fns: &HashMap<Global, Function>, symtab: &mut Symtab) {
                 Line::SetTo(_, _, _) |
                 Line::SetBinop(_, _, _, _, _) |
                 Line::SetUnop(_, _, _, _) |
-                Line::WriteTo(_, _, _) |
+                Line::WriteTo(_, _, _, _) |
                 Line::Label(_) |
                 Line::If(_, _, _) |
                 Line::Goto(_) |
                 Line::Ret(_) |
                 Line::Panic(_) |
-                Line::SetIndex(_, _, _) => ()
+                Line::SetArray(_, _, _) |
+                Line::ReadFrom(_, _, _, _) => todo!(),
             }
         }
     }
@@ -130,14 +131,15 @@ fn remove_unused_locals(program: &mut Program) {
                 Line::Label(_) => (),
                 &Line::ReadGlobal(Temp(i), _, _) |
                 &Line::SetAddrOf(Temp(i), _, Ident::Global(_)) |
+                &Line::SetArray(Temp(i), _, _) |
                 &Line::SetConst(Temp(i), _, _) => upper = i.max(upper),
+                &Line::ReadFrom(Temp(f), _, Temp(i), Temp(j)) |
+                &Line::WriteTo(Temp(f), Temp(i), _, Temp(j)) |
                 &Line::SetBinop(Temp(f), _, _, Temp(i), Temp(j)) => {
                     set_reference_from(&mut references, f, i, &mut upper);
                     set_reference_from(&mut references, f, j, &mut upper);
                 }
                 &Line::SetUnop(Temp(f), _, _, Temp(i)) |
-                &Line::WriteTo(Temp(f), _, Temp(i)) |
-                &Line::SetIndex(Temp(f), _, Temp(i)) |
                 &Line::SetAddrOf(Temp(f), _, Ident::Temp(Temp(i))) |
                 &Line::SetTo(Temp(f), _, Temp(i)) => set_reference_from(&mut references, f, i, &mut upper),
                 &Line::WriteGlobal(ref _g, _, Temp(i)) => queue.push(i),
@@ -182,15 +184,16 @@ fn remove_unused_locals(program: &mut Program) {
                 Line::WriteGlobal(_, _, t) |
                 Line::SetAddrOf(t, _, Ident::Global(_)) |
                 Line::If(t, _, _) |
+                Line::SetArray(t, _, _) |
                 Line::Ret(t) => rename_temp(t, &dead, &mut dead_lines, line_index),
                 Line::SetUnop(t1, _, _, t2) |
-                Line::WriteTo(t1, _, t2) |
-                Line::SetIndex(t1, _, t2) |
                 Line::SetAddrOf(t1, _, Ident::Temp(t2)) |
                 Line::SetTo(t1, _, t2) => {
                     rename_temp(t1, &dead, &mut dead_lines, line_index);
                     rename_temp(t2, &dead, &mut dead_lines, line_index);
                 }
+                Line::ReadFrom(t1, _, t2, t3) |
+                Line::WriteTo(t1, t2, _, t3) |
                 Line::SetBinop(t1, _, _, t2, t3) => {
                     rename_temp(t1, &dead, &mut dead_lines, line_index);
                     rename_temp(t2, &dead, &mut dead_lines, line_index);
@@ -213,8 +216,8 @@ fn remove_unused_locals(program: &mut Program) {
         }
 
         for dead in dead.into_iter().rev() {
-            if dead < f.local_names.len() {
-                f.local_names.remove(dead);
+            if dead < f.reg_names.len() {
+                f.reg_names.remove(dead);
             }
         }
         dead_lines.dedup();

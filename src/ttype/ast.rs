@@ -1,8 +1,8 @@
 use crate::parse::location::Location;
 
-use std::rc::Rc;
+use std::{cell::Cell, rc::Rc};
 
-use super::Type;
+use super::{StorageClass, Type};
 
 mod impls;
 #[derive(Debug, Clone)]
@@ -19,9 +19,9 @@ pub enum Decl {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Express(Location, Box<Type>, Expr),
-    Let(Location, Rc<str>, Box<Type>, Expr),
-    Var(Location, Rc<str>, Box<Type>, Expr),
-    Rebind(Location, PlaceExpr, Expr),
+    Let(Location, Rc<Cell<StorageClass>>, Rc<str>, Box<Type>, Expr),
+    Var(Location, Rc<Cell<StorageClass>>, Rc<str>, Box<Type>, Expr),
+    Assign(Location, PlaceExpr, Expr),
 
     Return(Location, Expr),
 }
@@ -29,7 +29,7 @@ pub enum Statement {
 pub enum PlaceExpr {
     Ident(Location, Rc<str>),
     Deref(Location, Box<Expr>, Box<Type>),
-    Index(Location, Box<Expr>, Box<Expr>),
+    Index(Location, Box<Expr>, Box<Type>, Box<Expr>),
     FieldAccess(Location, Box<Expr>, Rc<str>),
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -49,7 +49,7 @@ pub enum Expr {
     ConstNull(Location),
 
     Ref(Location, Result<PlaceExpr, Box<Self>>),
-    Array(Location, Box<[Self]>),
+    Array(Location, Box<Type>, Box<[Self]>),
     StructConstructor(Location, Box<[(Option<Box<str>>, Expr)]>),
     /// Span, first type is the original type, the second is the target
     Cast(Location, Box<Self>, Box<Type>, Box<Type>),
@@ -64,6 +64,7 @@ pub enum Expr {
     Neg(Location, Box<Self>),
     Deref(Location, Box<Self>),
 
+    Index(Location, Box<Self>, Box<Index>),
     Block(Location, Box<[Statement]>),
     Lambda(Location, Box<[(Rc<str>, Type)]>, Type, Box<Self>),
     Call(Location, Rc<str>, Box<[Self]>),
@@ -75,6 +76,16 @@ pub enum Expr {
     Lte(Location, Box<Self>, Box<Self>, Box<Type>),
     Gt(Location, Box<Self>, Box<Self>, Box<Type>),
     Gte(Location, Box<Self>, Box<Self>, Box<Type>),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum Index {
+    Full,
+    Index(Box<Expr>),
+    RangeFrom(Box<Expr>),
+    RangeToExcl(Box<Expr>),
+    RangeToIncl(Box<Expr>),
+    RangeExcl(Box<Expr>, Box<Expr>),
+    RangeIncl(Box<Expr>, Box<Expr>),
 }
 
 impl Expr {
@@ -94,7 +105,7 @@ impl Expr {
             | Expr::ConstString(loc, _)
             | Expr::ConstNull(loc)
             | Expr::Ref(loc, _)
-            | Expr::Array(loc, _)
+            | Expr::Array(loc, _, _)
             | Expr::StructConstructor(loc, _)
             | Expr::Cast(loc, _, _, _)
             | Expr::Add(loc, _, _)
@@ -104,6 +115,7 @@ impl Expr {
             | Expr::Concat(loc, _, _)
             | Expr::Not(loc, _)
             | Expr::Neg(loc, _)
+            | Expr::Index(loc, _, _)
             | Expr::Deref(loc, _)
             | Expr::Block(loc, _)
             | Expr::Lambda(loc, _, _, _)

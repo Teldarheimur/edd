@@ -502,8 +502,9 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 // get return
                 code.extend(ret_code.into_iter().chain(save_code.into_iter()));
             }
-            Line::WriteTo(_, _, _) => todo!(),
-            Line::SetIndex(_, _, _) => todo!(),
+            Line::SetArray(_, _, _) => todo!(),
+            Line::WriteTo(_, _, _, _) => todo!(),
+            Line::ReadFrom(_, _, _, _) => todo!(),
             Line::SetAddrOf(_, _, _) => todo!(),
             Line::ReadGlobal(dest, t, glbl) => {
                 let offset = state.new_wide_reg();

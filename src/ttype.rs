@@ -1,8 +1,5 @@
 use std::{
-    collections::HashSet,
-    fmt::{self, Display},
-    rc::Rc,
-    result::Result as StdResult,
+    cell::Cell, collections::HashSet, fmt::{self, Display}, rc::Rc, result::Result as StdResult
 };
 
 use collect_result::CollectResult;
@@ -17,6 +14,43 @@ pub mod type_checker;
 pub mod typevar;
 
 pub type Result<T, E = TypeError> = StdResult<T, E>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum StorageClass {
+    /// The default storage class. The compiler
+    /// will try to put it into a register. If its address is needed
+    /// it will be changed to `Stack` instead.
+    /// 
+    /// During register allocation, `AutoRegister`-marked variables will be spilled to the
+    /// stack upon failure
+    AutoRegister,
+    /// Manually specified to be a register
+    /// if the type-checker finds it needs to have an address
+    /// an error will be raised.
+    /// 
+    /// During register allocation, variables marked like this will be prioritised
+    /// for stoarge in registers, however they might have to be spilled anways.
+    Register,
+    /// The compiler is told that this variable needs to go on the stack.
+    /// This usually happens because its address is needed but can also be
+    /// explicitly specified in the source code (that feature might be questionable).
+    Stack,
+
+    /// Global symbols that live through-out the program and have an address
+    Static,
+}
+
+impl StorageClass {
+    #[inline]
+    pub fn new_rc_cell() -> Rc<Cell<Self>> {
+        Self::new_rc_cell_with(StorageClass::AutoRegister)
+    }
+    #[inline]
+    pub fn new_rc_cell_with(sc: Self) -> Rc<Cell<Self>> {
+        Rc::new(Cell::new(sc))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -105,8 +139,8 @@ impl Display for Type {
             Type::Unit => write!(f, "unit"),
             Type::Option(t) => write!(f, "?{t}"),
             Type::Pointer(t) => write!(f, "*{t}"),
-            Type::ArrayPointer(t) => write!(f, "[*]{t}"),
-            Type::Slice(t) => write!(f, "[]{t}"),
+            Type::ArrayPointer(t) => write!(f, "*[]{t}"),
+            Type::Slice(t) => write!(f, "[&]{t}"),
             Type::Array(t, n) => write!(f, "[{n}]{t}"),
             Type::Function(args, ret) => {
                 write!(f, "fn(")?;
@@ -138,11 +172,13 @@ pub enum TypeErrorType {
     InvalidConcatOps(Type, Type),
     CannotDeref(Type),
     Undefined(Box<str>),
+    AddrOfRegister(Box<str>),
     NotMutable(Box<str>),
     CannotCall(Type),
     UnequalArraySizes(u16, u16),
     UnequalArgLen(u16, u16),
     NotPtr(Type),
+    NotIndexable(Type),
     DisjointContraints(HashSet<Type>, HashSet<Type>),
     NonConcreteType,
     DuplicateGlobalDefinition(Box<str>),
@@ -166,6 +202,7 @@ impl Display for TypeError {
             InvalidConcatOps(t1, t2) => write!(f, "concatenation of {t1} and {t2} is not possible"),
             CannotDeref(t) => write!(f, "cannot dereference type {t}"),
             Undefined(v) => write!(f, "undefined variable {v}"),
+            AddrOfRegister(v) => write!(f, "cannot take address of stack variable {v}"),
             NotMutable(v) => write!(f, "invalid re-assigment of non-mutable variable {v}"),
             CannotCall(t) => write!(f, "cannot call type {t}"),
             UnequalArraySizes(s1, s2) => write!(f, "arrays did not have same length: {s1} != {s2}"),
@@ -174,6 +211,7 @@ impl Display for TypeError {
                 "functions did not have number of arguments: {s1} != {s2}"
             ),
             NotPtr(t) => write!(f, "type {t} is not a pointer"),
+            NotIndexable(t) => write!(f, "type {t} is not indexable"),
             DisjointContraints(s1, s2) => write!(f, "incompatible type constraints: {s1:?} {s2:?}"),
             NonConcreteType => write!(f, "could not infer concrete type"),
             DuplicateGlobalDefinition(name) => write!(f, "duplicate global definition of {name}"),

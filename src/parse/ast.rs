@@ -1,4 +1,5 @@
 use std::fmt::{self, Display};
+use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::ttype::Type;
@@ -22,7 +23,7 @@ pub enum Statement {
     Express(Location, Expr),
     Let(Location, Rc<str>, Option<Type>, Expr),
     Var(Location, Rc<str>, Option<Type>, Expr),
-    Rebind(Location, PlaceExpr, Expr),
+    Assign(Location, PlaceExpr, Expr),
 
     Return(Location, Expr),
 }
@@ -99,10 +100,47 @@ impl Display for Program {
 #[derive(Debug, Clone)]
 pub enum PlaceExpr {
     Ident(Location, Rc<str>),
-    Deref(Location, Expr),
-    Index(Location, Expr, Expr),
-    FieldAccess(Location, Expr, Rc<str>),
+    Deref(Location, Box<Expr>),
+    Index(Location, Box<Expr>, Box<Expr>),
+    FieldAccess(Location, Box<Expr>, Rc<str>),
 }
+impl PlaceExpr {
+    pub fn try_from(e: Expr) -> Result<PlaceExpr, Expr> {
+        match e {
+            Expr::Ident(loc, ident) => Ok(PlaceExpr::Ident(loc, ident)),
+            Expr::Deref(loc, e) => Ok(PlaceExpr::Deref(loc, e)),
+            Expr::Index(loc, e1, Index::Index(e2)) => Ok(PlaceExpr::Index(loc, e1, e2)),
+            // Expr::FieldAccess(loc, e, ident) => Ok(PlaceExpr::FieldAccess(loc, e, ident)),
+            e => Err(e),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Index {
+    Full,
+    Index(Box<Expr>),
+    RangeFrom(Box<Expr>),
+    RangeToExcl(Box<Expr>),
+    RangeToIncl(Box<Expr>),
+    RangeExcl(Box<Expr>, Box<Expr>),
+    RangeIncl(Box<Expr>, Box<Expr>),
+}
+
+impl Display for Index {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Index::Full => write!(f, ".."),
+            Index::Index(i) => write!(f, "{i}"),
+            Index::RangeFrom(from) => write!(f, "{from}.."),
+            Index::RangeToExcl(to) => write!(f, "..<{to}"),
+            Index::RangeToIncl(to) => write!(f, "..={to}"),
+            Index::RangeExcl(from, to) => write!(f, "{from}..{to}"),
+            Index::RangeIncl(from, to) => write!(f, "{from}..{to}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Expr {
     Ident(Location, Rc<str>),
@@ -116,7 +154,8 @@ pub enum Expr {
     Not(Location, Box<Self>),
     Neg(Location, Box<Self>),
 
-    Ref(Location, Box<Self>),
+    Index(Location, Box<Self>, Index),
+    Ref(Location, Box<Result<PlaceExpr, Self>>),
     Deref(Location, Box<Self>),
     Array(Location, Box<[Self]>),
     StructConstructor(Location, Box<[(Option<Box<str>>, Expr)]>),
@@ -169,6 +208,7 @@ impl Display for Expr {
                 }
                 write!(f, " ({body})")
             }
+            Expr::Index(_, arr, index) => write!(f, "({arr}[{index}])"),
             Expr::Call(_, f_name, args) => {
                 write!(f, "{f_name}(")?;
                 let mut first = true;
@@ -189,7 +229,10 @@ impl Display for Expr {
             Expr::Gt(_, a, b) => write!(f, "({a} > {b})"),
             Expr::Gte(_, a, b) => write!(f, "({a} >= {b})"),
             Expr::Not(_, a) => write!(f, "!{a}"),
-            Expr::Ref(_, a) => write!(f, "&{a}"),
+            Expr::Ref(_, a) => match a.deref() {
+                Ok(a) => write!(f, "&{a}"),
+                Err(a) => write!(f, "&{a}"),
+            }
             Expr::Neg(_, a) => write!(f, "-{a}"),
             Expr::Deref(_, a) => write!(f, "*{a}"),
             Expr::Array(_, a) => f.debug_list().entries(&**a).finish(),
@@ -249,8 +292,38 @@ impl Display for Statement {
                 }
                 write!(f, " = {e}")
             }
-            Statement::Rebind(_, n, e) => write!(f, "{n} = {e}"),
+            Statement::Assign(_, n, e) => write!(f, "{n} = {e}"),
             Statement::Return(_, e) => write!(f, "ret {e}"),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprOrType {
+    Expr(Expr),
+    Type(Type),
+}
+impl ExprOrType {
+    pub fn into_expr(self) -> Expr {
+        match self {
+            Self::Expr(e) => e,
+            _ => unreachable!()
+        }
+    }
+    pub fn into_type(self) -> Type {
+        match self {
+            Self::Type(t) => t,
+            _ => unreachable!()
+        }
+    }
+}
+impl From<Expr> for ExprOrType {
+    fn from(e: Expr) -> Self {
+        Self::Expr(e)
+    }
+}
+impl From<Type> for ExprOrType {
+    fn from(t: Type) -> Self {
+        Self::Type(t)
     }
 }

@@ -16,7 +16,7 @@ use pest::Parser;
 pub mod ast;
 pub mod location;
 
-use self::ast::{Expr, Literal, PlaceExpr, Program, Statement};
+use self::ast::{Expr, ExprOrType, Literal, PlaceExpr, Program, Index, Statement};
 use self::location::Location;
 use crate::get_only_one;
 use crate::parse::ast::Decl;
@@ -49,7 +49,21 @@ pub fn parse_file(path: &Path) -> Result<Program> {
         file.read_to_string(&mut buf)?;
         buf
     };
-    let pairs = EddParser::parse(Rule::program, &source)?;
+    let pairs = EddParser::parse(Rule::program, &source)
+        .map_err(|e| {
+            let e = e.with_path(&path.to_string_lossy());
+
+            match &e.variant {
+                pest::error::ErrorVariant::ParsingError { positives, negatives } => {
+                    eprintln!("pos: {positives:?}");
+                    eprintln!("neg: {negatives:?}");
+                }
+                pest::error::ErrorVariant::CustomError { .. } => unreachable!(),
+            }
+
+            e
+        })
+        ?;
 
     EddParser::parse_program(pairs, &path.into())
 }
@@ -154,7 +168,7 @@ impl EddParser {
     }
     fn parse_expr(expr: Pairs<Rule>, sf: &Rc<Path>) -> Expr {
         EXPR_PARSER
-            .map_primary(|p| match p.as_rule() {
+            .map_primary::<_, ExprOrType>(|p| match p.as_rule() {
                 Rule::literal => Expr::Const(
                     Location::from_span(sf, p.as_span()),
                     Self::parse_literal(p.into_inner()),
@@ -203,9 +217,63 @@ impl EddParser {
 
                     Expr::Block(loc, stmnts)
                 }
+                Rule::indexed => {
+                    let loc = Location::from_span(sf, p.as_span());
+                    let mut ps = p.into_inner();
+                    let indexable = Self::parse_expr(Pairs::single(ps.next().unwrap()), sf);
+                    let p = get_only_one(ps);
+                    let rule = p.as_rule();
+                    let mut exprs = p
+                        .into_inner()
+                        .map(|e| Box::new(Self::parse_expr(Pairs::single(e), sf)));
+
+                    Expr::Index(loc, Box::new(indexable), match rule {
+                        Rule::full_range => Index::Full,
+                        Rule::range_from => Index::RangeFrom(
+                            get_only_one(exprs),
+                        ),
+                        Rule::range_to_excl => Index::RangeToExcl(
+                            get_only_one(exprs),
+                        ),
+                        Rule::range_to_incl => Index::RangeToIncl(
+                            get_only_one(exprs),
+                        ),
+                        Rule::range_excl => Index::RangeExcl(
+                            exprs.next().unwrap(),
+                            get_only_one(exprs),
+                        ),
+                        Rule::range_incl => Index::RangeIncl(
+                            exprs.next().unwrap(),
+                            get_only_one(exprs),
+                        ),
+                        Rule::expr => Index::Index(get_only_one(exprs)),
+                        r => unreachable!("{r:?}"),
+                    })
+                },
+                Rule::array_lit => {
+                    let loc = Location::from_span(sf, p.as_span());
+                    let exprs = p
+                        .into_inner()
+                        .map(|p| Self::parse_expr(p.into_inner(), sf))
+                        .collect();
+                    Expr::Array(loc, exprs)
+                }
                 r => unreachable!("{r:?}"),
-            })
-            .map_infix(|lhs, op, rhs| match op.as_rule() {
+            }.into())
+            .map_infix(|lhs, op, rhs| {
+                let lhs = lhs.into_expr();
+
+                if let Rule::cast_as = op.as_rule() {
+                    return Expr::Cast(
+                        Location::from_span(sf, op.as_span()),
+                        Box::new(lhs),
+                        rhs.into_type()
+                    ).into();
+                }
+
+                let rhs = rhs.into_expr();
+
+                match op.as_rule() {
                 Rule::add => Expr::Add(
                     Location::from_span(sf, op.as_span()),
                     Box::new(lhs),
@@ -261,44 +329,18 @@ impl EddParser {
                     Box::new(lhs),
                     Box::new(rhs),
                 ),
-                Rule::cast_as => Expr::Cast(
-                    Location::from_span(sf, op.as_span()),
-                    Box::new(lhs),
-                    todo!("{}", rhs),
-                ),
                 _ => unreachable!(),
-            })
-            .map_prefix(|op, rhs| match op.as_rule() {
+            }}.into())
+            .map_prefix(|op, rhs| {
+                let rhs = rhs.into_expr();
+                match op.as_rule() {
                 Rule::not => Expr::Not(Location::from_span(sf, op.as_span()), Box::new(rhs)),
-                Rule::r#ref => Expr::Ref(Location::from_span(sf, op.as_span()), Box::new(rhs)),
+                Rule::r#ref => Expr::Ref(Location::from_span(sf, op.as_span()), Box::new(PlaceExpr::try_from(rhs))),
                 Rule::neg => Expr::Neg(Location::from_span(sf, op.as_span()), Box::new(rhs)),
                 Rule::deref => Expr::Deref(Location::from_span(sf, op.as_span()), Box::new(rhs)),
                 _ => unreachable!(),
-            })
-            .parse(expr)
-    }
-    fn parse_pl_expr(pairs_t: Pairs<Rule>, sf: &Rc<Path>) -> PlaceExpr {
-        let pl_expr = get_only_one(pairs_t);
-        let loc = Location::from_span(sf, pl_expr.as_span());
-        match pl_expr.as_rule() {
-            Rule::ident => PlaceExpr::Ident(loc, pl_expr.as_str().into()),
-            Rule::deref_expr => PlaceExpr::Deref(loc, Self::parse_expr(pl_expr.into_inner(), sf)),
-            Rule::array_index => {
-                let mut pairs = pl_expr.into_inner();
-                let e = Pairs::single(pairs.next().unwrap());
-                let i = Pairs::single(pairs.next().unwrap());
-
-                PlaceExpr::Index(loc, Self::parse_expr(e, sf), Self::parse_expr(i, sf))
-            }
-            Rule::field_access => {
-                let mut pairs = pl_expr.into_inner();
-                let e = Pairs::single(pairs.next().unwrap());
-                let i = Pairs::single(pairs.next().unwrap());
-
-                PlaceExpr::FieldAccess(loc, Self::parse_expr(e, sf), i.as_str().into())
-            }
-            _ => unreachable!(),
-        }
+            }}.into())
+            .parse(expr).into_expr()
     }
     fn parse_statement(mut stmnt: Pairs<Rule>, sf: &Rc<Path>) -> Statement {
         let Some(stmnt) = stmnt.next() else {
@@ -325,9 +367,9 @@ impl EddParser {
             }
             Rule::assign => {
                 let mut binding = stmnt.into_inner();
-                let id = Self::parse_pl_expr(binding.next().unwrap().into_inner(), sf);
+                let place = Self::parse_expr(binding.next().unwrap().into_inner(), sf);
                 let expr = Self::parse_expr(binding.next().unwrap().into_inner(), sf);
-                Statement::Rebind(loc, id, expr)
+                Statement::Assign(loc, PlaceExpr::try_from(place).expect("TODO: RETURN ERROR INSTEAD"), expr)
             }
             Rule::r#return => {
                 let expr = get_only_one(stmnt.into_inner());

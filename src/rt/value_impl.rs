@@ -27,7 +27,7 @@ impl Display for Value {
                 Ok(())
             }
             Value::BuiltinFn(func) => write!(f, "fn({func:p})"),
-            Value::Ref(var) => write!(f, "&{}", var.display()),
+            Value::Ref(addr) => write!(f, "&{addr}"),
         }
     }
 }

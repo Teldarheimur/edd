@@ -1,15 +1,15 @@
+use std::ops::Deref;
+
 use collect_result::CollectResult;
 
 use self::concrete::{concretise_expr, concretise_type};
 
 use super::{
-    ast::{Decl, Expr, PlaceExpr, Program, Statement},
-    stab::SymbolTable,
-    unify_types, Result, Type, TypeErrorType,
+    ast::{Decl, Expr, Index, PlaceExpr, Program, Statement}, stab::SymbolTable, unify_types, Result, StorageClass::{self, *}, Type, TypeErrorType
 };
 use crate::parse::{
     ast::{
-        Decl as UntypedDecl, Expr as UntypedExpr, Literal as UntypedLiteral,
+        Decl as UntypedDecl, Expr as UntypedExpr, Literal as UntypedLiteral, Index as UntypedIndex,
         PlaceExpr as UntypedPle, Program as Prgm, Statement as UntypedStatement,
     },
     location::Location,
@@ -36,7 +36,7 @@ pub fn check_program(Prgm(decls): Prgm) -> Result<Program> {
                 Type::Function(args.iter().map(|(_, t)| t.clone()).collect(), ret.clone()),
             ),
         };
-        if stab.add(mutable, name.clone(), t) {
+        if stab.add(mutable, StorageClass::new_rc_cell_with(Static), name.clone(), t) {
             return Err(
                 TypeErrorType::DuplicateGlobalDefinition((&**name).into()).location(loc.clone())
             );
@@ -65,7 +65,7 @@ pub fn check_program(Prgm(decls): Prgm) -> Result<Program> {
                 let (t, e) = {
                     let mut stab = stab.clone();
                     for (arg, arg_t) in &*args {
-                        stab.add(false, arg.clone(), arg_t.clone());
+                        stab.add(false, StorageClass::new_rc_cell_with(Static), arg.clone(), arg_t.clone());
                     }
 
                     let (et, e) = *b;
@@ -134,37 +134,54 @@ fn check_statements(
             UntypedStatement::Let(loc, n, t, e) => {
                 let (ct, e) = check_expr(&e, state)?;
                 let t = unify_types(&loc, &t.unwrap_or_else(Type::any), &ct)?;
-                state.add(false, n.clone(), t.clone());
-                stmnts.push(Statement::Let(loc, n, Box::new(t), e));
+                let sc = StorageClass::new_rc_cell();
+                state.add(false, sc.clone(), n.clone(), t.clone());
+                stmnts.push(Statement::Let(loc, sc, n, Box::new(t), e));
             }
             UntypedStatement::Var(loc, n, t, e) => {
                 let (ct, e) = check_expr(&e, state)?;
                 let t = unify_types(&loc, &t.unwrap_or_else(Type::any), &ct)?;
-                state.add(true, n.clone(), t.clone());
-                stmnts.push(Statement::Var(loc, n, Box::new(t), e));
+                let sc = StorageClass::new_rc_cell();
+                state.add(true, sc.clone(), n.clone(), t.clone());
+                stmnts.push(Statement::Var(loc, sc, n, Box::new(t), e));
             }
-            UntypedStatement::Rebind(loc, UntypedPle::Ident(loc2, n), e) => {
+            UntypedStatement::Assign(loc, UntypedPle::Ident(loc2, n), e) => {
                 let (t, e) = check_expr(&e, state)?;
                 let _t = state.mutate(&loc, &n, &t)?;
-                stmnts.push(Statement::Rebind(loc, PlaceExpr::Ident(loc2, n), e));
+                stmnts.push(Statement::Assign(loc, PlaceExpr::Ident(loc2, n), e));
             }
-            UntypedStatement::Rebind(loc, UntypedPle::Deref(loc2, ptr_e), e) => {
+            UntypedStatement::Assign(loc, UntypedPle::Deref(loc2, ptr_e), e) => {
                 let (ptr_t, ptr_e) = check_expr(&ptr_e, state)?;
                 let (t, e) = check_expr(&e, state)?;
                 let Type::Pointer(inner_t) = ptr_t else {
                     return Err(TypeErrorType::NotPtr(ptr_t).location(loc));
                 };
                 let t = unify_types(&loc, &t, &inner_t)?;
-                stmnts.push(Statement::Rebind(
+                stmnts.push(Statement::Assign(
                     loc,
                     PlaceExpr::Deref(loc2, Box::new(ptr_e), Box::new(t)),
                     e,
                 ));
             }
-            UntypedStatement::Rebind(_loc, UntypedPle::Index(_loc2, arr_e, ind_e), e) => {
-                todo!("check Index({arr_e}, {ind_e}), {e})")
+            UntypedStatement::Assign(loc, UntypedPle::Index(loc2, arr_e, ind_e), e) => {
+                let (arr_t, arr_e) = check_expr(&arr_e, state)?;
+                let ind_e = check_expr_as(&ind_e, state, &Type::U16)?;
+
+                let inner_t = match &arr_t {
+                    Type::Array(t, _) => t.clone(),
+                    Type::ArrayPointer(t) => t.clone(),
+                    Type::Slice(t) => t.clone(),
+                    t => return Err(TypeErrorType::NotIndexable(t.clone()).location(loc)),
+                };
+                let e = check_expr_as(&e, state, &inner_t)?;
+
+                stmnts.push(Statement::Assign(
+                    loc,
+                    PlaceExpr::Index(loc2, Box::new(arr_e), inner_t, Box::new(ind_e)),
+                    e,
+                ));
             }
-            UntypedStatement::Rebind(_loc, UntypedPle::FieldAccess(_loc2, str_e, i), e) => {
+            UntypedStatement::Assign(_loc, UntypedPle::FieldAccess(_loc2, str_e, i), e) => {
                 todo!("check FieldAccess({str_e}, {i}), {e})")
             }
             UntypedStatement::Return(loc, e) => {
@@ -213,10 +230,10 @@ fn check_literal(loc: Location, lit: &UntypedLiteral) -> (Type, Expr) {
     }
 }
 
-fn check_expr_as(expr: &UntypedExpr, state: &SymbolTable, expected_type: Type) -> Result<Expr> {
+fn check_expr_as(expr: &UntypedExpr, state: &SymbolTable, expected_type: &Type) -> Result<Expr> {
     let (t, e) = check_expr(expr, state)?;
     let loc = e.location();
-    let unified_type = unify_types(&loc, &expected_type, &t)?;
+    let unified_type = unify_types(&loc, expected_type, &t)?;
     if t != unified_type {
         Ok(Expr::Cast(
             loc,
@@ -240,8 +257,8 @@ fn check_binop_expr<F, E>(
 where
     F: FnOnce(Location, Box<Expr>, Box<Expr>) -> E,
 {
-    let ea = check_expr_as(a, state, operand_t.clone())?;
-    let eb = check_expr_as(b, state, operand_t.clone())?;
+    let ea = check_expr_as(a, state, &operand_t)?;
+    let eb = check_expr_as(b, state, &operand_t)?;
     Ok((
         operand_t,
         binop_expr(loc.clone(), Box::new(ea), Box::new(eb)),
@@ -270,12 +287,12 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
         }
         UntypedExpr::Neg(loc, e) => {
             let t = Type::constrained(Type::SIGNED);
-            let e = check_expr_as(e, state, t.clone())?;
+            let e = check_expr_as(e, state, &t)?;
             Ok((t, Expr::Neg(loc.clone(), Box::new(e))))
         }
         UntypedExpr::Not(loc, e) => {
             let t = Type::constrained(Type::BITS);
-            let e = check_expr_as(e, state, t.clone())?;
+            let e = check_expr_as(e, state, &t)?;
             Ok((t, Expr::Not(loc.clone(), Box::new(e))))
         }
         UntypedExpr::Concat(loc, a, b) => {
@@ -360,10 +377,19 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
         .map(|(t, (l, a, b))| (Type::Bool, Expr::Gte(l, a, b, Box::new(t)))),
 
         UntypedExpr::Ref(loc, e) => {
-            let (t, e) = check_expr(e, state)?;
-            let res = convert_expr_to_pl_expr(e, &t);
+            let (t, pl) = match e.deref() {
+                Err(e) => {
+                    let (t, e) = check_expr(e, state)?;
+                    (t, Err(Box::new(e)))
+                }
+                Ok(pl) => {
+                    let (t, pl) = check_pl_expr(pl, state)?;
+                    (t, Ok(pl))
+                }
+            };
             let t = Type::Pointer(Box::new(t));
-            Ok((t, Expr::Ref(loc.clone(), res.map_err(Box::new))))
+
+            Ok((t, Expr::Ref(loc.clone(), pl)))
         }
         UntypedExpr::Deref(loc, e) => {
             let (t, e) = check_expr(e, state)?;
@@ -374,6 +400,54 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
                 )),
                 t => Err(TypeErrorType::CannotDeref(t).location(loc.clone())),
             }
+        }
+        UntypedExpr::Index(loc, arr, index) => {
+            let (arr_t, arr_e) = check_expr(arr, state)?;
+            let mut making_slice = true;
+            let ind = match index {
+                UntypedIndex::Full => Index::Full,
+                UntypedIndex::Index(i) => {
+                    making_slice = false;
+                    Index::Index(
+                        Box::new(check_expr_as(&i, state, &Type::U16)?)
+                    )
+                }
+                UntypedIndex::RangeFrom(f) => Index::RangeFrom(
+                    Box::new(check_expr_as(&f, state, &Type::U16)?)
+                ),
+                UntypedIndex::RangeToExcl(t) => Index::RangeToExcl(
+                    Box::new(check_expr_as(&t, state, &Type::U16)?)
+                ),
+                UntypedIndex::RangeToIncl(t) => Index::RangeToIncl(
+                    Box::new(check_expr_as(&t, state, &Type::U16)?)
+                ),
+                UntypedIndex::RangeExcl(f, t) => Index::RangeExcl(
+                    Box::new(check_expr_as(&f, state, &Type::U16)?),
+                    Box::new(check_expr_as(&t, state, &Type::U16)?),
+                ),
+                UntypedIndex::RangeIncl(f, t) => Index::RangeIncl(
+                    Box::new(check_expr_as(&f, state, &Type::U16)?),
+                    Box::new(check_expr_as(&t, state, &Type::U16)?),
+                ),
+            };
+
+            let inner_t = match &arr_t {
+                Type::Array(t, _) => t.clone(),
+                Type::ArrayPointer(t) => t.clone(),
+                Type::Slice(t) => t.clone(),
+                t => return Err(TypeErrorType::NotIndexable(t.clone()).location(loc.clone())),
+            };
+
+            let t = if making_slice {
+                Type::Slice(inner_t)
+            } else {
+                *inner_t
+            };
+
+            Ok((
+                t,
+                Expr::Index(loc.clone(), Box::new(arr_e), Box::new(ind)),
+            ))
         }
         UntypedExpr::Call(loc, name, args) => {
             let ft = state.lookup(name).map_err(|e| e.location(loc.clone()))?;
@@ -415,7 +489,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
 
             let mut stab = state.clone();
             for (name, ty) in &*args {
-                stab.add(false, name.clone(), ty.clone());
+                stab.add(false, StorageClass::new_rc_cell(), name.clone(), ty.clone());
             }
 
             let any;
@@ -443,18 +517,52 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             }
             Ok((t, Expr::Block(loc.clone(), stmnts.into_boxed_slice())))
         }
-        UntypedExpr::Array(_loc, _) => todo!(),
+        UntypedExpr::Array(loc, exprs) => {
+            let element_type = Type::any();
+            let exprs: Vec<_> = exprs
+                .iter()
+                .map(|e| {
+                    let (t, e) = check_expr(e, state)?;
+                    let at = unify_types(loc, &element_type, &t)?;
+                    if at != t {
+                        Ok(Expr::Cast(
+                            loc.clone(),
+                            Box::new(e),
+                            Box::new(t),
+                            Box::new(at),
+                        ))
+                    } else {
+                        Ok(e)
+                    }
+                })
+                .collect_result()?;
+            let arr_type = Type::Array(Box::new(element_type.clone()), exprs.len() as u16);
+            Ok((arr_type, Expr::Array(loc.clone(), Box::new(element_type), exprs.into_boxed_slice())))
+        }
         UntypedExpr::StructConstructor(_loc, _) => todo!(),
         UntypedExpr::Cast(_loc, _, _) => todo!(),
     }
 }
 
-fn convert_expr_to_pl_expr(e: Expr, t: &Type) -> Result<PlaceExpr, Expr> {
-    match e {
-        Expr::Ident(loc, ident) => Ok(PlaceExpr::Ident(loc, ident)),
-        Expr::Deref(loc, e) => Ok(PlaceExpr::Deref(loc, e, Box::new(t.clone()))),
-        // Expr::Index(loc, e1, e2) => Ok(PlaceExpr::Index(loc, e1, e2)),
-        // Expr::FieldAccess(loc, e, ident) => Ok(PlaceExpr::FieldAccess(loc, e, ident)),
-        e => Err(e),
+fn check_pl_expr(pl: &UntypedPle, state: &SymbolTable) -> Result<(Type, PlaceExpr)> {
+    match pl {
+        UntypedPle::Ident(loc, i) => {
+            state.addr_of(loc, i)?;
+            let t = state.lookup(i).map_err(|e| e.location(loc.clone()))?;
+
+            Ok((t, PlaceExpr::Ident(loc.clone(), i.clone())))
+        }
+        UntypedPle::Deref(loc, e) => {
+            let (t, e) = check_expr(e, state)?;
+            match t {
+                Type::Pointer(inner) => Ok((
+                    inner.as_ref().clone(),
+                    PlaceExpr::Deref(loc.clone(), Box::new(e), inner.clone()),
+                )),
+                t => Err(TypeErrorType::CannotDeref(t).location(loc.clone())),
+            }
+        }
+        UntypedPle::Index(_, _, _) => todo!(),
+        UntypedPle::FieldAccess(_, _, _) => todo!(),
     }
 }

@@ -23,7 +23,7 @@ impl Function {
             .collect();
 
         Self {
-            local_names,
+            reg_names: local_names,
             arg_types,
             ret_type: flatten_type(ret_type),
             lines: Vec::new(),
@@ -156,7 +156,7 @@ impl Display for Program {
             name,
             Function {
                 lines,
-                local_names,
+                reg_names: local_names,
                 arg_types,
                 ret_type,
             },
@@ -227,6 +227,11 @@ impl Display for DisplayLine<'_> {
                 dest.display_with(locals),
                 src.display_with(locals)
             ),
+            Line::SetArray(dest, len, t) => write!(
+                f,
+                "{} = {t}[{len}]",
+                dest.display_with(locals)
+            ),
             Line::SetCall(dest, t, name, args) => {
                 write!(
                     f,
@@ -258,17 +263,19 @@ impl Display for DisplayLine<'_> {
             Line::ReadGlobal(dest, t, src) => {
                 write!(f, "{} = {t} {src}", dest.display_with(locals))
             }
-            Line::WriteTo(dest_ptr, t, src) => write!(
+            Line::WriteTo(dest_ptr, offset, t, src) => write!(
                 f,
-                "*{} = {t} {}",
+                "{}[{}] = {t} {}",
                 dest_ptr.display_with(locals),
-                src.display_with(locals)
+                offset.display_with(locals),
+                src.display_with(locals),
             ),
-            Line::SetIndex(dest, t, src) => write!(
+            Line::ReadFrom(dest, t, src_ptr, offset) => write!(
                 f,
-                "{}[??] = {t} {}",
+                "{} = {t} {}[{}]",
                 dest.display_with(locals),
-                src.display_with(locals)
+                src_ptr.display_with(locals),
+                offset.display_with(locals),
             ),
             Line::Panic(msg) => write!(f, "panic({msg})"),
         }

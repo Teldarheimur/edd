@@ -1,12 +1,13 @@
 use std::{collections::HashMap, iter, rc::Rc};
 
 use crate::flat::{
-    ticker::Ticker, FlatType, Function, Global, Ident, Label, Line, StaticDecl, Temp,
+    ticker::Ticker, FlatType, Function, Global, Ident, Label, Line, StackOffset, StaticDecl, Temp
 };
 
 pub struct FlattenState<'a> {
     fn_name: &'a str,
-    symtab: HashMap<Rc<str>, Temp>,
+    register_symtab: HashMap<Rc<str>, Temp>,
+    stackvar_symtab: HashMap<Rc<str>, StackOffset>,
     pub statics: &'a mut Vec<StaticDecl>,
     pub fns: &'a mut HashMap<Global, Function>,
     local_types: Vec<Option<FlatType>>,
@@ -25,13 +26,14 @@ impl<'a> FlattenState<'a> {
             local_types: iter::once(None)
                 .chain(function.arg_types.iter().map(|t| Some(t.clone())))
                 .collect(),
-            symtab: function
-                .local_names
+            register_symtab: function
+                .reg_names
                 .iter()
                 .skip(1)
                 .zip(1..)
                 .map(|(n, i)| ((**n).into(), Temp(i)))
                 .collect(),
+            stackvar_symtab: HashMap::new(),
             fn_name,
             function,
             statics,
@@ -44,29 +46,48 @@ impl<'a> FlattenState<'a> {
         self.function.lines.push(line);
     }
     pub fn ident_from_identifier(&self, identifier: Rc<str>) -> Ident {
-        if let Some(local) = self.symtab.get(&identifier) {
+        if let Some(local) = self.register_symtab.get(&identifier) {
             return local.clone().into();
+        }
+        if let Some(so) = self.stackvar_symtab.get(&identifier) {
+            return so.clone().into();
         }
 
         Global(identifier).into()
     }
     pub fn new_temp_from_identifier(&mut self, identifier: Rc<str>, t: FlatType) -> Temp {
         let temp = self.new_temp(&identifier, t);
-        self.symtab.insert(identifier, temp.clone());
+        self.register_symtab.insert(identifier, temp.clone());
         temp
+    }
+    pub fn new_so_from_identifier(&mut self, identifier: Rc<str>, t: FlatType) -> StackOffset {
+        let so = self.new_so(&identifier, t);
+        self.stackvar_symtab.insert(identifier, so.clone());
+        so
     }
     pub const fn temp_hole(&self) -> Temp {
         Temp(0)
     }
     pub fn new_temp(&mut self, name: &str, t: FlatType) -> Temp {
-        let index = self.function.local_names.len();
+        let index = self.function.reg_names.len();
         self.function
-            .local_names
+            .reg_names
             .push(format!("__{name}").into_boxed_str());
 
         let temp = Temp(index);
         self.set_type(temp.clone(), t);
         temp
+    }
+    pub fn new_so(&mut self, name: &str, t: FlatType) -> StackOffset {
+        let index = self.function.stack_names.len();
+        self.function
+            .stack_names
+            .push(format!("__{name}").into_boxed_str());
+
+        let so = StackOffset(index);
+        _ = t;
+        // self.set_type(temp.clone(), t);
+        so
     }
     pub fn new_label(&mut self) -> Label {
         Label(self.label_ticker.tick())
@@ -83,7 +104,8 @@ impl<'a> FlattenState<'a> {
     }
     pub fn get_type<I: Into<Ident>>(&self, var: I) -> Option<FlatType> {
         match var.into() {
-            Ident::Temp(temp) => self.local_types.get(temp.inner()).cloned().flatten(),
+            Ident::Reg(temp) => self.local_types.get(temp.inner()).cloned().flatten(),
+            Ident::Stack(_so) => todo!(),
             Ident::Global(g) => {
                 if let Some(f) = self.fns.get(&g) {
                     return Some(FlatType::FnPtr(

@@ -1,7 +1,7 @@
-use std::{collections::HashSet, rc::Rc};
+use std::{collections::HashSet, ops::Deref, rc::Rc};
 
 use crate::ttype::{
-    ast::{Expr, PlaceExpr, Statement},
+    ast::{Expr, Index, PlaceExpr, Statement},
     Type,
 };
 
@@ -163,8 +163,9 @@ pub fn static_eval(
             out.push(StaticDecl::SetString(place, t, res));
             Ok(())
         }
+        Expr::Index(_, _, _) => todo!(),
         Expr::Ref(_, Ok(_)) => todo!(),
-        Expr::Array(_, _) => todo!(),
+        Expr::Array(_, _, _) => todo!(),
         Expr::StructConstructor(_, _) => todo!(),
         Expr::Cast(_, _, _, _) => todo!(),
         Expr::Add(_, _, _) => todo!(),
@@ -228,7 +229,25 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
                 expr_symbol_deps(e, deps, overshadowed);
             }
         }
-        Expr::Array(_, es) => {
+        Expr::Index(_, a, i) => {
+            expr_symbol_deps(a, deps, overshadowed);
+            match i.deref() {
+                Index::Full => (),
+                Index::Index(e) => expr_symbol_deps(e, deps, overshadowed),
+                Index::RangeFrom(e) => expr_symbol_deps(e, deps, overshadowed),
+                Index::RangeToExcl(e) => expr_symbol_deps(e, deps, overshadowed),
+                Index::RangeToIncl(e) => expr_symbol_deps(e, deps, overshadowed),
+                Index::RangeExcl(e1, e2) => {
+                    expr_symbol_deps(e1, deps, overshadowed);
+                    expr_symbol_deps(e2, deps, overshadowed);
+                }
+                Index::RangeIncl(e1, e2) => {
+                    expr_symbol_deps(e1, deps, overshadowed);
+                    expr_symbol_deps(e2, deps, overshadowed);
+                }
+            }
+        }
+        Expr::Array(_, _, es) => {
             for e in es.iter() {
                 expr_symbol_deps(e, deps, overshadowed);
             }
@@ -271,9 +290,9 @@ fn pl_expr_symbol_deps(
         PlaceExpr::Deref(_, e, _) | PlaceExpr::FieldAccess(_, e, _) => {
             expr_symbol_deps(e, deps, overshadowed);
         }
-        PlaceExpr::Index(_, e1, e2) => {
-            expr_symbol_deps(e1, deps, overshadowed);
-            expr_symbol_deps(e2, deps, overshadowed);
+        PlaceExpr::Index(_, e, _, i) => {
+            expr_symbol_deps(e, deps, overshadowed);
+            expr_symbol_deps(i, deps, overshadowed);
         }
     }
 }
@@ -284,11 +303,11 @@ fn statement_symbol_deps(
     overshadowed: &mut HashSet<Rc<str>>,
 ) {
     match stmnt {
-        Statement::Rebind(_, pl_expr, expr) => {
+        Statement::Assign(_, pl_expr, expr) => {
             pl_expr_symbol_deps(pl_expr, deps, overshadowed);
             expr_symbol_deps(expr, deps, overshadowed);
         }
-        Statement::Let(_, n, _, e) | Statement::Var(_, n, _, e) => {
+        Statement::Let(_, _, n, _, e) | Statement::Var(_, _, n, _, e) => {
             expr_symbol_deps(e, deps, overshadowed);
             overshadowed.insert(n.clone());
         }

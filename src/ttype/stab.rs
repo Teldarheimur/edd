@@ -1,17 +1,18 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::Cell, collections::HashMap, rc::Rc};
 
 use crate::parse::location::Location;
 
-use super::{unify_types, Result, Type, TypeErrorType};
+use super::{unify_types, Result, StorageClass, Type, TypeErrorType};
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
     mutable: bool,
+    storage: Rc<Cell<StorageClass>>,
     s_type: Type,
 }
 impl Symbol {
-    fn new(s_type: Type, mutable: bool) -> Self {
-        Symbol { mutable, s_type }
+    const fn new(s_type: Type, mutable: bool, storage: Rc<Cell<StorageClass>>) -> Self {
+        Symbol { mutable, s_type, storage }
     }
 }
 
@@ -25,9 +26,9 @@ impl SymbolTable {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn add<S: Into<Rc<str>>>(&mut self, mutable: bool, name: S, ty: Type) -> bool {
+    pub fn add<S: Into<Rc<str>>>(&mut self, mutable: bool, storage: Rc<Cell<StorageClass>>, name: S, ty: Type) -> bool {
         self.map
-            .insert(name.into(), Symbol::new(ty, mutable))
+            .insert(name.into(), Symbol::new(ty, mutable, storage))
             .is_some()
     }
     pub fn lookup_raw(&self, name: &str) -> Result<Symbol, TypeErrorType> {
@@ -46,8 +47,23 @@ impl SymbolTable {
 
         Ok(ut)
     }
+    pub fn addr_of(&self, loc: &Location, name: &str) -> Result<()> {
+        let Some(Symbol { storage, .. }) = self.map.get(name) else {
+            return Err(TypeErrorType::Undefined(name.into()).location(loc.clone()));
+        };
+        match storage.get() {
+            StorageClass::Register => Err(TypeErrorType::AddrOfRegister(name.into()).location(loc.clone())),
+            StorageClass::Stack => Ok(()),
+            StorageClass::Static => Ok(()),
+            // Mark as register now
+            StorageClass::AutoRegister => {
+                storage.set(StorageClass::Stack);
+                Ok(())
+            }
+        }
+    }
     pub fn mutate(&mut self, loc: &Location, name: &str, t: &Type) -> Result<Type> {
-        let Some(Symbol { s_type, mutable }) = self.map.get(name) else {
+        let Some(Symbol { s_type, mutable, storage: _ }) = self.map.get(name) else {
             return Err(TypeErrorType::Undefined(name.into()).location(loc.clone()));
         };
         if !mutable {

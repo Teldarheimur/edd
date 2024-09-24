@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ttype::{
-    ast::{Expr, PlaceExpr, Statement},
-    Type,
+    ast::{Expr, Index, PlaceExpr, Statement}, StorageClass, Type
 };
 
 use self::state::FlattenState;
@@ -73,7 +72,8 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
     match expr {
         Expr::Ident(_, name) => match state.ident_from_identifier(name) {
             Ident::Global(g) => state.add_code(Line::ReadGlobal(place, t, g)),
-            Ident::Temp(temp) => state.add_code(Line::SetTo(place, t, temp)),
+            Ident::Reg(temp) => state.add_code(Line::SetTo(place, t, temp)),
+            Ident::Stack(so) => state.add_code(Line::StackRead(place, t, so, Temp::ZERO)),
         },
         Expr::ConstBoolean(_, b) => {
             state.add_code(Line::SetConst(place, t, Const::ConstBoolean(b)));
@@ -134,7 +134,19 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             static_eval(global.clone(), t.clone(), e, &mut namer, state.statics).unwrap();
             state.add_code(Line::ReadGlobal(place, t, global));
         }
-        Expr::Array(_, _) => todo!(),
+        Expr::Array(_, t, es) => {
+            let len = es.len() as u16;
+            let t = flatten_type(*t);
+            let arr = state.new_temp("array", FlatType::Arr(Box::new(t.clone()), len));
+            state.add_code(Line::SetArray(arr.clone(), len, t.clone()));
+            for (i, e) in es.into_vec().into_iter().enumerate() {
+                let pl_e = state.new_temp("element", t.clone());
+                flatten_expr(e, t.clone(), pl_e.clone(), state);
+                let index = state.new_temp("index", FlatType::U16);
+                state.add_code(Line::SetConst(index.clone(), FlatType::U16, Const::ConstU16(i as u16)));
+                state.add_code(Line::WriteTo(arr.clone(), index, t.clone(), pl_e));
+            }
+        },
         Expr::StructConstructor(_, _) => todo!(),
         Expr::Cast(_, e, from_t, to_t) => {
             let from_t = flatten_type(*from_t);
@@ -219,6 +231,42 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             let arg_place = state.new_temp("neg_arg", t.clone());
             flatten_expr(*e, t.clone(), arg_place.clone(), state);
             state.add_code(Line::SetUnop(place, t, Unop::Neg, arg_place));
+        }
+        Expr::Index(_, arr_e, index) => {
+            match *index {
+                Index::Full => todo!(),
+                Index::RangeFrom(ind_e) => {
+                    let ind_place = state.new_temp("index_arg", FlatType::U16);
+                    flatten_expr(*ind_e, t.clone(), ind_place.clone(), state);
+                },
+                Index::RangeToExcl(ind_e) => {
+                    let ind_place = state.new_temp("index_arg", FlatType::U16);
+                    flatten_expr(*ind_e, t.clone(), ind_place.clone(), state);
+                },
+                Index::RangeToIncl(ind_e) => {
+                    let ind_place = state.new_temp("index_arg", FlatType::U16);
+                    flatten_expr(*ind_e, t.clone(), ind_place.clone(), state);
+                },
+                Index::RangeExcl(ind_e, ind_e1) => {
+                    let ind_place = state.new_temp("index_arg", FlatType::U16);
+                    flatten_expr(*ind_e, t.clone(), ind_place.clone(), state);
+                    let ind_place1 = state.new_temp("index2_arg", FlatType::U16);
+                    flatten_expr(*ind_e1, t.clone(), ind_place1.clone(), state);
+                },
+                Index::RangeIncl(ind_e, ind_e1) => {
+                    let ind_place = state.new_temp("index_arg", FlatType::U16);
+                    flatten_expr(*ind_e, t.clone(), ind_place.clone(), state);
+                    let ind_place1 = state.new_temp("index2_arg", FlatType::U16);
+                    flatten_expr(*ind_e1, t.clone(), ind_place1.clone(), state);
+                },
+                Index::Index(ind_e) => {
+                    let arr_place = state.new_temp("index_array", FlatType::Ptr(Some(Box::new(t.clone()))));
+                    flatten_expr(*arr_e, t.clone(), arr_place.clone(), state);
+                    let ind_place = state.new_temp("index_arg", FlatType::U16);
+                    flatten_expr(*ind_e, t.clone(), ind_place.clone(), state);
+                    state.add_code(Line::ReadFrom(place, t, arr_place, ind_place));
+                }
+            }
         }
         Expr::Deref(_, e) => {
             let ptr_t = FlatType::Ptr(Some(Box::new(t.clone())));
@@ -345,19 +393,30 @@ fn flatten_block(
                 flatten_expr(e, t, place.clone(), state);
                 last_expr = Some(place);
             }
-            Statement::Let(_, n, t, e) | Statement::Var(_, n, t, e) => {
-                let t = flatten_type(*t);
-                let place = state.new_temp_from_identifier(n, t.clone());
-                flatten_expr(e, t, place, state);
+            Statement::Let(_, sc, n, t, e) | Statement::Var(_, sc, n, t, e) => {
+                match sc.get() {
+                    StorageClass::AutoRegister | StorageClass::Register => {
+                        let t = flatten_type(*t);
+                        let place = state.new_temp_from_identifier(n, t.clone());
+                        flatten_expr(e, t, place, state);
+                    }
+                    StorageClass::Stack => {
+
+                    }
+                    _ => unreachable!(),
+                }
             }
-            Statement::Rebind(_, PlaceExpr::Ident(_, n), e) => {
+            Statement::Assign(_, PlaceExpr::Ident(_, n), e) => {
                 let ident = state.ident_from_identifier(n.clone());
                 let ident_t = state.get_type(ident.clone()).expect("type");
 
                 match ident {
-                    Ident::Temp(temp) => {
+                    Ident::Reg(temp) => {
                         flatten_expr(e, ident_t.clone(), temp, state);
                         // `place` was set to be the ident already
+                    }
+                    Ident::Stack(so) => {
+                        todo!();
                     }
                     Ident::Global(g) => {
                         let place = state.new_temp(&n, ident_t.clone());
@@ -366,7 +425,7 @@ fn flatten_block(
                     }
                 }
             }
-            Statement::Rebind(_, PlaceExpr::Deref(_, ptr_e, inner_t), e) => {
+            Statement::Assign(_, PlaceExpr::Deref(_, ptr_e, inner_t), e) => {
                 let inner_t = flatten_type(*inner_t);
                 let place_ptr =
                     state.new_temp("deref_ptr", FlatType::Ptr(Some(Box::new(inner_t.clone()))));
@@ -374,14 +433,21 @@ fn flatten_block(
                 let t = inner_t;
                 let place_val = state.new_temp("val", t.clone());
                 flatten_expr(e, t.clone(), place_val.clone(), state);
-                state.add_code(Line::WriteTo(place_ptr, t, place_val))
+                state.add_code(Line::WriteTo(place_ptr, Temp::ZERO, t, place_val))
             }
-            Statement::Rebind(_, PlaceExpr::FieldAccess(_, _strct_e, _ident), _e) => {
-                todo!()
+            Statement::Assign(_, PlaceExpr::Index(_, arr_e, arr_t, ind), e) => {
+                let arr_t = flatten_type(*arr_t);
+                let place_ptr =
+                    state.new_temp("arr_ptr", FlatType::Ptr(Some(Box::new(arr_t.clone()))));
+                flatten_expr(*arr_e, FlatType::Ptr(Some(Box::new(arr_t.clone()))), place_ptr.clone(), state);
+                let index = state.new_temp("arr_index", FlatType::U16);
+                flatten_expr(*ind, FlatType::U16, index.clone(), state);
+                let t = arr_t;
+                let place_val = state.new_temp("val", t.clone());
+                flatten_expr(e, t.clone(), place_val.clone(), state);
+                state.add_code(Line::WriteTo(place_ptr, index, t, place_val));
             }
-            Statement::Rebind(_, PlaceExpr::Index(_, _arr_e, _ind_e), _e) => {
-                todo!()
-            }
+            Statement::Assign(_, PlaceExpr::FieldAccess(_, _, _), _) => todo!(),
             Statement::Return(_, e) => {
                 // use block `place` because the function will not continue after this
                 // FIXME: `block_t` is not necessarily the return type

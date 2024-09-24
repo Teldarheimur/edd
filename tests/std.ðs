@@ -1,4 +1,4 @@
-extern fn puts(s: []byte) unit;
+extern fn puts(s: [&]byte) unit;
 
 extern fn puti32(n: i32) unit;
 extern fn putu32(n: u32) unit;

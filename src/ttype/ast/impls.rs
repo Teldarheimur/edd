@@ -1,6 +1,8 @@
 use std::fmt::{self, Display};
 
-use super::{Decl, Expr, PlaceExpr, Program, Statement};
+use crate::ttype::StorageClass;
+
+use super::{Decl, Expr, Index, PlaceExpr, Program, Statement};
 
 impl Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -49,13 +51,23 @@ impl Display for Program {
     }
 }
 
+impl Display for StorageClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StorageClass::AutoRegister => write!(f, ""),
+            StorageClass::Register => write!(f, " register"),
+            StorageClass::Stack => write!(f, " onstack"),
+            StorageClass::Static => write!(f, " static"),
+        }
+    }
+}
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Statement::Express(_, t, e) => write!(f, "{e} (: {t})"),
-            Statement::Let(_, n, t, e) => write!(f, "let {n}: {t} = {e}"),
-            Statement::Var(_, n, t, e) => write!(f, "var {n}: {t} = {e}"),
-            Statement::Rebind(_, n, e) => write!(f, "{n} = {e}"),
+            Statement::Let(_, sc, n, t, e) => write!(f, "let{} {n}: {t} = {e}", sc.get()),
+            Statement::Var(_, sc, n, t, e) => write!(f, "var{} {n}: {t} = {e}", sc.get()),
+            Statement::Assign(_, n, e) => write!(f, "{n} = {e}"),
             Statement::Return(_, e) => write!(f, "{e}"),
         }
     }
@@ -66,8 +78,22 @@ impl Display for PlaceExpr {
         match self {
             Self::Ident(_, i) => write!(f, "{i}"),
             Self::Deref(_, a, t) => write!(f, "*{a} (: {t})"),
-            Self::Index(_, e, i) => write!(f, "{e}[{i}]"),
+            Self::Index(_, e, t, i) => write!(f, "{e}[{i}] (: {t})"),
             Self::FieldAccess(_, e, i) => write!(f, "{e}.{i}"),
+        }
+    }
+}
+
+impl Display for Index {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Index::Full => write!(f, ".."),
+            Index::Index(i) => write!(f, "{i}"),
+            Index::RangeFrom(from) => write!(f, "{from}.."),
+            Index::RangeToExcl(to) => write!(f, "..<{to}"),
+            Index::RangeToIncl(to) => write!(f, "..={to}"),
+            Index::RangeExcl(from, to) => write!(f, "{from}..{to}"),
+            Index::RangeIncl(from, to) => write!(f, "{from}..{to}"),
         }
     }
 }
@@ -131,8 +157,20 @@ impl Display for Expr {
                 Err(e) => write!(f, "&{e}"),
             },
             Expr::Neg(_, a) => write!(f, "-{a}"),
+            Expr::Index(_, a, i) => write!(f, "{a}[{i}]"),
             Expr::Deref(_, a) => write!(f, "*{a}"),
-            Expr::Array(_, _a) => todo!(),
+            Expr::Array(_, t, es) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for e in es.iter() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{e}")?;
+                }
+                write!(f, "] (: {t})")
+            }
             Expr::StructConstructor(_, strct) => {
                 write!(f, "{{ ")?;
                 for (name, val) in strct.iter() {

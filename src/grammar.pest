@@ -18,9 +18,11 @@ type = {
     grouped
 }
     primitive = {
+        type_t |
         bool_t | byte_t | u8_t | i8_t | u16_t |
         i16_t | u32_t | i32_t | float_t | unit_t
     }
+        type_t = { "type" }
         bool_t = { "bool" }
         byte_t = { "byte" }
         u8_t = { "u8" }
@@ -33,9 +35,9 @@ type = {
         unit_t = { "unit" }
     opt = { "?" ~ type }
     ptr = { "*" ~ type }
-    slice = { "[]" ~ type }
+    slice = { "[" ~ "&" ~ "]" ~ type }
     array = { "[" ~ int ~ "]" ~ type }
-    arrptr = { "[" ~ "*" ~ "]" ~ type }
+    arrptr = { "*" ~ "[" ~ "]" ~ type }
     fntype = { "fn" ~ "(" ~ types ~ ")" ~ type }
     grouped = _{ "(" ~ type ~ ")" }
 
@@ -47,9 +49,9 @@ return_type = { type? }
 typed_ident = { ident ~ type_annot }
 mtyped_ident = { ident ~ type_annot_opt }
 
-operation = _{
+binop = _{
     concat | add | subtract | multiply | divide |
-    eq | neq | lte | gte | gt | lt | cast_as
+    eq | neq | lte | gte | gt | lt
 }
     add      = { "+" }
     concat   = { "++" }
@@ -85,23 +87,39 @@ call = {
     ident ~ "(" ~ exprs ~ ")"
 }
 
+index = _{
+    range |
+    expr // straight index
+}
+range = _{
+    range_to_excl |
+    range_to_incl |
+    full_range |
+    range_excl |
+    range_incl |
+    range_from
+}
+    full_range    = {        ":" }
+    range_from    = { expr ~ ":" }
+    range_to_excl = {        ":<" ~ expr }
+    range_to_incl = {        ":=" ~ expr }
+    range_excl    = { expr ~ ":<" ~ expr }
+    range_incl    = { expr ~ ":=" ~ expr }
+indexed = { inner_expr ~ "[" ~ index ~ "]" }
+
 literal = { num | boolean | string }
-expr = { term ~ (operation ~ term)*}
-term = _{ if | lambda | literal | call | ident | unop ~ expr | "(" ~ expr ~ ")" | block }
+array_lit = { "[" ~ ( expr ~ ("," ~ expr)* ~ ","? )? ~ "]" }
+expr = { term ~ (binop ~ term | cast_as ~ type)*}
+term = _{ indexed | inner_expr }
+inner_expr = _{ if | lambda | literal | call | ident | unop ~ expr | "(" ~ expr ~ ")" | block | array_lit }
 
 let_bind = { "let" ~ ident ~ type_annot_opt ~ "=" ~ expr }
 var_bind = { "var" ~ ident ~ type_annot_opt ~ "=" ~ expr }
-assign = { pl_expr ~ "=" ~ expr }
-    pl_expr = { ident |
-        deref_expr | array_index | field_access |
-        "(" ~ pl_expr ~ ")"
-    }
-        deref_expr = { "*" ~ expr }
-        array_index = { expr ~ "[" ~ expr ~ "]" }
-        field_access = { expr ~ "." ~ ident }
 return = { "ret" ~ expr }
+    // the first expression needs to be a place expression
+assign = { expr ~ "=" ~ expr }
 
-statement = { (let_bind | var_bind | assign | return | expr)? }
+statement = { (let_bind | var_bind | return | assign | expr)? }
 statements = _{ (statement ~ (";" ~ statement)*)? }
 
 block = { "{" ~ statements ~ "}" }

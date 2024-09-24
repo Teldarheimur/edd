@@ -56,8 +56,9 @@ pub fn flatten(program: TypedProgram) -> Program {
 pub struct Label(u64);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Ident {
-    Temp(Temp),
     Global(Global),
+    Stack(StackOffset),
+    Reg(Temp),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Temp(usize);
@@ -84,7 +85,20 @@ impl From<Global> for Ident {
 }
 impl From<Temp> for Ident {
     fn from(t: Temp) -> Self {
-        Ident::Temp(t)
+        Ident::Reg(t)
+    }
+}
+impl From<StackOffset> for Ident {
+    fn from(so: StackOffset) -> Self {
+        Ident::Stack(so)
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StackOffset(usize);
+impl StackOffset {
+    #[inline(always)]
+    pub fn inner(&self) -> usize {
+        self.0
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,7 +126,8 @@ pub struct Function {
     pub arg_types: Box<[FlatType]>,
     pub ret_type: FlatType,
     pub lines: Vec<Line>,
-    pub local_names: Vec<Box<str>>,
+    pub reg_names: Vec<Box<str>>,
+    pub stack_names: Vec<Box<str>>,
 }
 #[derive(Debug, Clone)]
 pub struct Program {
@@ -136,13 +151,25 @@ pub enum Line {
     SetTo(Temp, FlatType, Temp),
     SetBinop(Temp, FlatType, Binop, Temp, Temp),
     SetUnop(Temp, FlatType, Unop, Temp),
-
     SetCall(Temp, FlatType, Ident, Box<[Temp]>),
-    /// first `Temp` must contain a pointer
-    WriteTo(Temp, FlatType, Temp),
-    // TODO: merge with `WriteTo` using a offset where `Temp(0)` represents no offset
-    SetIndex(Temp, FlatType, Temp),
     SetAddrOf(Temp, FlatType, Ident),
+
+    /// allocate space on stack for a (statically sized) type
+    /// the offset will be represented symbolically by the `StackOffset`
+    StackAlloc(StackOffset, FlatType),
+    /// read a stack-allocated value from the stack into a register
+    StackRead(Temp, FlatType, StackOffset, Temp),
+    /// write a value into the stack
+    StackWrite(StackOffset, Temp, Temp),
+    /// free a stack offset (these have to happen in reverse order from their allocation)
+    StackFree(StackOffset),
+
+    /// first `Temp` must contain a pointer
+    /// second an offset, where `Temp(0)` represents no offset
+    WriteToAddr(Temp, Temp, FlatType, Temp),
+    /// second `Temp` must contain a pointer
+    /// third an offset, where `Temp(0)` represents no offset
+    ReadFromAddr(Temp, FlatType, Temp, Temp),
 
     ReadGlobal(Temp, FlatType, Global),
     WriteGlobal(Global, FlatType, Temp),

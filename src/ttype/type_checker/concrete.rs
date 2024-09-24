@@ -1,7 +1,9 @@
+use std::ops::DerefMut;
+
 use crate::{
     parse::location::Location,
     ttype::{
-        ast::{Expr, PlaceExpr, Statement},
+        ast::{Expr, Index, PlaceExpr, Statement},
         Result, Type,
     },
 };
@@ -50,15 +52,15 @@ pub fn concretise_statement(stmnt: &mut Statement) -> Result<()> {
             concretise_type(loc.clone(), t)?;
             concretise_expr(e)
         }
-        Statement::Let(loc, _, t, e) => {
+        Statement::Let(loc, _, _, t, e) => {
             concretise_type(loc.clone(), t)?;
             concretise_expr(e)
         }
-        Statement::Var(loc, _, t, e) => {
+        Statement::Var(loc, _, _, t, e) => {
             concretise_type(loc.clone(), t)?;
             concretise_expr(e)
         }
-        Statement::Rebind(_, p, e) => {
+        Statement::Assign(_, p, e) => {
             concretise_pexpr(p)?;
             concretise_expr(e)
         }
@@ -73,7 +75,11 @@ fn concretise_pexpr(p: &mut PlaceExpr) -> Result<()> {
             concretise_expr(e)?;
             concretise_type(loc.clone(), t)
         }
-        PlaceExpr::Index(_, e, e2) => concretise_expr(e).and_then(|()| concretise_expr(e2)),
+        PlaceExpr::Index(loc, e, t, ind) => {
+            concretise_expr(e)?;
+            concretise_type(loc.clone(), t)?;
+            concretise_expr(ind)
+        }
         PlaceExpr::FieldAccess(_, e, _) => concretise_expr(e),
     }
 }
@@ -115,7 +121,32 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
             }
             Ok(())
         }
-        Expr::Array(_, es) | Expr::Call(_, _, es) => {
+        Expr::Index(_, e1, i) => {
+            concretise_expr(e1)?;
+            match i.deref_mut() {
+                Index::Full => Ok(()),
+                Index::Index(e) => concretise_expr(e),
+                Index::RangeFrom(e) => concretise_expr(e),
+                Index::RangeToExcl(e) => concretise_expr(e),
+                Index::RangeToIncl(e) => concretise_expr(e),
+                Index::RangeExcl(e1, e2) => {
+                    concretise_expr(e1)?;
+                    concretise_expr(e2)
+                }
+                Index::RangeIncl(e1, e2) => {
+                    concretise_expr(e1)?;
+                    concretise_expr(e2)
+                }
+            }
+        }
+        Expr::Call(_, _, es) => {
+            for e in es.iter_mut() {
+                concretise_expr(e)?;
+            }
+            Ok(())
+        }
+        Expr::Array(loc, t, es) => {
+            concretise_type(loc.clone(), t)?;
             for e in es.iter_mut() {
                 concretise_expr(e)?;
             }

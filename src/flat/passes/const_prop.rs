@@ -124,7 +124,10 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                     }
                 }
                 Line::SetCall(t, _, _, _) => stab.set(t.clone(), Value::RuntimeDependant),
-                Line::WriteTo(s1, _, s2) => {
+                Line::WriteTo(s1, o1, _, s2) => {
+                    if *o1 != Temp::ZERO {
+                        todo!("check offset too");
+                    }
                     match (stab.get(s1.clone()), stab.get(s2.clone())) {
                         (Value::Alias(Ident::Temp(t1)), Value::Alias(Ident::Temp(t2))) => {
                             *s1 = t1.clone();
@@ -139,7 +142,8 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                         _ => (),
                     }
                 }
-                Line::SetIndex(_, _, _) => todo!(),
+                Line::SetArray(_, _, _) => todo!(),
+                Line::ReadFrom(_, _, _, _) => todo!(),
                 Line::SetAddrOf(t, _, _) => stab.set(t.clone(), Value::RuntimeDependant),
                 Line::ReadGlobal(t, ty, g) => {
                     let t = t.clone();
