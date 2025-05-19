@@ -56,7 +56,7 @@ fn liveness_iteration<V: Eq + Clone>(mut in_set: In<V>, mut out_set: Out<V>, suc
     debug_assert_eq!(succ_sets.len(), gen_sets.len());
     debug_assert_eq!(succ_sets.len(), kill_sets.len());
 
-    for (i, (o, ((gen, kill), successors))) in out_set.iter_mut().zip(gen_sets.iter().zip(kill_sets).zip(succ_sets.iter())).enumerate().rev() {
+    for (i, (o, ((genr, kill), successors))) in out_set.iter_mut().zip(gen_sets.iter().zip(kill_sets).zip(succ_sets.iter())).enumerate().rev() {
         *o = successors
             .iter()
             .map(|&j| in_set[j].iter().cloned())
@@ -65,7 +65,7 @@ fn liveness_iteration<V: Eq + Clone>(mut in_set: In<V>, mut out_set: Out<V>, suc
                 acc
             });
 
-        let gen_set = SmallSet::from_iter(gen.iter().cloned());
+        let gen_set = SmallSet::from_iter(genr.iter().cloned());
 
         in_set[i] = gen_set.union(o.clone().diff(kill.iter()));
     }
