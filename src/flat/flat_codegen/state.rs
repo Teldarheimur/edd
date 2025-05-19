@@ -14,6 +14,7 @@ pub struct FlattenState<'a> {
     label_ticker: Ticker,
     global_ticker: Ticker,
     function: &'a mut Function,
+    epilogue: Vec<Line>,
 }
 impl<'a> FlattenState<'a> {
     pub fn new(
@@ -40,6 +41,7 @@ impl<'a> FlattenState<'a> {
             fns,
             label_ticker: Ticker::new(),
             global_ticker: Ticker::new(),
+            epilogue: Vec::new(),
         }
     }
     pub fn add_code(&mut self, line: Line) {
@@ -136,4 +138,20 @@ impl<'a> FlattenState<'a> {
             }
         }
     }
+    
+    pub fn epilogue_marker(&self) -> EpilogueMarker {
+        EpilogueMarker(self.epilogue.len())
+    }
+    pub fn add_epilogue_code(&mut self, line: Line) {
+        self.epilogue.push(line);
+    }
+    pub fn epilogue(&mut self, marker: EpilogueMarker) {
+        let start = marker.0;
+        while self.epilogue.len() > start {
+            let line = self.epilogue.pop().unwrap();
+            self.add_code(line);
+        }
+    }
 }
+
+pub struct EpilogueMarker(usize);

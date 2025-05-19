@@ -237,7 +237,18 @@ impl Display for Expr {
             }
             Expr::Neg(_, a) => write!(f, "-{a}"),
             Expr::Deref(_, a) => write!(f, "*{a}"),
-            Expr::Array(_, a) => f.debug_list().entries(&**a).finish(),
+            Expr::Array(_, a) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for a in a {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{a}")?;
+                }
+                write!(f, "]")
+            }
             Expr::StructConstructor(_, strct) => {
                 write!(f, "{{ ")?;
                 for (name, val) in strct.iter() {

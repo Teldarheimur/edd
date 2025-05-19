@@ -124,7 +124,8 @@ impl<'a> RuntimeState<'a> {
         let i = self.stack_vars[&so].0;
         match self.lookup(offset) {
             Value::U16(o) => i + o as usize,
-            _ => todo!(),
+            Value::Naught => i,
+            v => todo!("{v:?} {v}"),
         }
     }
     pub fn read_addr(&self, addr: Address) -> Value {

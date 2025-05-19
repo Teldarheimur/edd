@@ -1,0 +1,5 @@
+fn main() unit {
+    var array = [1, 2, 3];
+    array[2] = array[0];
+    array[1] = array[3];
+}
