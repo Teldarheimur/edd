@@ -9,13 +9,18 @@ use super::{
 };
 use crate::parse::{
     ast::{
-        Decl as UntypedDecl, Expr as UntypedExpr, Literal as UntypedLiteral, Index as UntypedIndex,
-        PlaceExpr as UntypedPle, Program as Prgm, Statement as UntypedStatement,
+        Decl as UntypedDecl, Expr as UntypedExpr, Index as UntypedIndex, Literal as UntypedLiteral, PlaceExpr as UntypedPle, Program as Prgm, Statement as UntypedStatement
     },
     location::Location,
 };
 
-pub fn check_program(Prgm(decls): Prgm) -> Result<Program> {
+mod sc_checker;
+
+pub fn check(program: Prgm) -> Result<Program> {
+    check_program(program).and_then(sc_checker::check)
+}
+
+fn check_program(Prgm(decls): Prgm) -> Result<Program> {
     let mut stab = SymbolTable::new();
     for (name, decl) in &decls {
         let (mutable, loc, t) = match decl {
@@ -401,6 +406,26 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
                 t => Err(TypeErrorType::CannotDeref(t).location(loc.clone())),
             }
         }
+        UntypedExpr::FieldAccess(loc, structlike, field) => {
+            let (t, e) = check_expr(structlike, state)?;
+            let field_t = match t {
+                Type::Struct(t_fields) => {
+                    let err_t = Type::Struct(t_fields.clone());
+
+                    let mut ret_type = None;
+                    for t_field in t_fields {
+                        if &t_field.0 == field {
+                            ret_type = Some(t_field.1);
+                        }
+                    }
+                    ret_type.ok_or_else(move || TypeErrorType::NoSuchField(err_t, format!("{}", field).into_boxed_str()).location(loc.clone()))?
+                }
+                Type::Slice(_) if &**field == "len" => Type::U16,
+                Type::Slice(t) if &**field == "ptr" => Type::ArrayPointer(t),
+                t => return Err(TypeErrorType::NoSuchField(t, format!("{}", field).into_boxed_str()).location(loc.clone()))
+            };
+            Ok((field_t, Expr::FieldAccess(loc.clone(), Box::new(e), field.clone())))
+        },
         UntypedExpr::Index(loc, arr, index) => {
             let (arr_t, arr_e) = check_expr(arr, state)?;
             let mut making_slice = true;

@@ -79,7 +79,7 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                             *line = Line::SetConst(t1.clone(), ty.clone(), c);
                             stab.set(t1, Value::Const(c));
                         }
-                        Value::Alias(Ident::Temp(t)) => {
+                        Value::Alias(Ident::Reg(t)) => {
                             *t2 = t.clone();
                             stab.set(t1, Value::Alias(t.clone().into()));
                         }
@@ -93,16 +93,16 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                             stab.set(dest.clone(), Value::Const(c));
                             *line = Line::SetConst(dest.clone(), ty.clone(), c);
                         }
-                        (Value::Alias(Ident::Temp(t1)), Value::Alias(Ident::Temp(t2))) => {
+                        (Value::Alias(Ident::Reg(t1)), Value::Alias(Ident::Reg(t2))) => {
                             *s1 = t1.clone();
                             *s2 = t2.clone();
                             stab.set(dest.clone(), Value::RuntimeDependant);
                         }
-                        (Value::Alias(Ident::Temp(t1)), _) => {
+                        (Value::Alias(Ident::Reg(t1)), _) => {
                             *s1 = t1.clone();
                             stab.set(dest.clone(), Value::RuntimeDependant);
                         }
-                        (_, Value::Alias(Ident::Temp(t2))) => {
+                        (_, Value::Alias(Ident::Reg(t2))) => {
                             *s2 = t2.clone();
                             stab.set(dest.clone(), Value::RuntimeDependant);
                         }
@@ -116,7 +116,7 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                             stab.set(dest.clone(), Value::Const(c));
                             *line = Line::SetConst(dest.clone(), ty.clone(), apply_unop(*unop, c));
                         }
-                        Value::Alias(Ident::Temp(t)) => {
+                        Value::Alias(Ident::Reg(t)) => {
                             *s = t.clone();
                             stab.set(dest.clone(), Value::RuntimeDependant);
                         },
@@ -124,26 +124,29 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                     }
                 }
                 Line::SetCall(t, _, _, _) => stab.set(t.clone(), Value::RuntimeDependant),
-                Line::WriteTo(s1, o1, _, s2) => {
+                Line::StackAlloc(_, _) => todo!(),
+                Line::StackFree(_) => todo!(),
+                Line::StackWrite(_, _, _) => todo!(),
+                Line::StackRead(_, _, _, _) => todo!(),
+                Line::WriteToAddr(s1, o1, _, s2) => {
                     if *o1 != Temp::ZERO {
                         todo!("check offset too");
                     }
                     match (stab.get(s1.clone()), stab.get(s2.clone())) {
-                        (Value::Alias(Ident::Temp(t1)), Value::Alias(Ident::Temp(t2))) => {
+                        (Value::Alias(Ident::Reg(t1)), Value::Alias(Ident::Reg(t2))) => {
                             *s1 = t1.clone();
                             *s2 = t2.clone();
                         }
-                        (Value::Alias(Ident::Temp(t1)), _) => {
+                        (Value::Alias(Ident::Reg(t1)), _) => {
                             *s1 = t1.clone();
                         }
-                        (_, Value::Alias(Ident::Temp(t2))) => {
+                        (_, Value::Alias(Ident::Reg(t2))) => {
                             *s2 = t2.clone();
                         }
                         _ => (),
                     }
                 }
-                Line::SetArray(_, _, _) => todo!(),
-                Line::ReadFrom(_, _, _, _) => todo!(),
+                Line::ReadFromAddr(_, _, _, _) => todo!(),
                 Line::SetAddrOf(t, _, _) => stab.set(t.clone(), Value::RuntimeDependant),
                 Line::ReadGlobal(t, ty, g) => {
                     let t = t.clone();
@@ -161,7 +164,7 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                 }
                 Line::WriteGlobal(g, _, t) => {
                     let v = stab.get(t.clone()).clone();
-                    if let Value::Alias(Ident::Temp(t_alias)) = &v {
+                    if let Value::Alias(Ident::Reg(t_alias)) = &v {
                         *t = t_alias.clone();
                     }
                     stab.set(g.clone(), v);

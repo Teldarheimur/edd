@@ -100,20 +100,25 @@ fn mark_fns(fns: &HashMap<Global, Function>, symtab: &mut Symtab) {
                 Line::SetCall(_, _, Ident::Global(g), _) => {
                     symtab.reference_from(fname, g);
                 }
-                Line::SetCall(_, _, Ident::Temp(_), _) |
-                Line::SetAddrOf(_, _, Ident::Temp(_)) |
+                Line::SetCall(_, _, Ident::Reg(_), _) |
+                Line::SetCall(_, _, Ident::Stack(_), _) |
+                Line::SetAddrOf(_, _, Ident::Reg(_)) |
+                Line::SetAddrOf(_, _, Ident::Stack(_)) |
                 Line::SetConst(_, _, _) |
                 Line::SetTo(_, _, _) |
                 Line::SetBinop(_, _, _, _, _) |
                 Line::SetUnop(_, _, _, _) |
-                Line::WriteTo(_, _, _, _) |
+                Line::WriteToAddr(_, _, _, _) |
                 Line::Label(_) |
                 Line::If(_, _, _) |
                 Line::Goto(_) |
                 Line::Ret(_) |
                 Line::Panic(_) |
-                Line::SetArray(_, _, _) |
-                Line::ReadFrom(_, _, _, _) => todo!(),
+                Line::StackAlloc(_, _) |
+                Line::StackFree(_) |
+                Line::StackRead(_, _, _, _) |
+                Line::StackWrite(_, _, _) |
+                Line::ReadFromAddr(_, _, _, _) => todo!(),
             }
         }
     }
@@ -126,21 +131,27 @@ fn remove_unused_locals(program: &mut Program) {
         let mut upper = 0;
         for line in &f.lines {
             match line {
+                Line::StackAlloc(_, _) |
+                Line::StackFree(_) |
                 Line::Goto(_) |
                 Line::Panic(_) |
                 Line::Label(_) => (),
                 &Line::ReadGlobal(Temp(i), _, _) |
                 &Line::SetAddrOf(Temp(i), _, Ident::Global(_)) |
-                &Line::SetArray(Temp(i), _, _) |
+                &Line::SetAddrOf(Temp(i), _, Ident::Stack(_)) |
                 &Line::SetConst(Temp(i), _, _) => upper = i.max(upper),
-                &Line::ReadFrom(Temp(f), _, Temp(i), Temp(j)) |
-                &Line::WriteTo(Temp(f), Temp(i), _, Temp(j)) |
+                &Line::StackRead(Temp(f), _, _, Temp(t)) |
+                &Line::StackWrite(_, Temp(f), Temp(t)) => {
+                    set_reference_from(&mut references, f, t, &mut upper);
+                }
+                &Line::ReadFromAddr(Temp(f), _, Temp(i), Temp(j)) |
+                &Line::WriteToAddr(Temp(f), Temp(i), _, Temp(j)) |
                 &Line::SetBinop(Temp(f), _, _, Temp(i), Temp(j)) => {
                     set_reference_from(&mut references, f, i, &mut upper);
                     set_reference_from(&mut references, f, j, &mut upper);
                 }
                 &Line::SetUnop(Temp(f), _, _, Temp(i)) |
-                &Line::SetAddrOf(Temp(f), _, Ident::Temp(Temp(i))) |
+                &Line::SetAddrOf(Temp(f), _, Ident::Reg(Temp(i))) |
                 &Line::SetTo(Temp(f), _, Temp(i)) => set_reference_from(&mut references, f, i, &mut upper),
                 &Line::WriteGlobal(ref _g, _, Temp(i)) => queue.push(i),
                 &Line::If(Temp(i), _, _) |
@@ -151,7 +162,7 @@ fn remove_unused_locals(program: &mut Program) {
                     for Temp(i) in &**ts {
                         queue.push(*i);
                     }
-                    if let Ident::Temp(Temp(i)) = i {
+                    if let Ident::Reg(Temp(i)) = i {
                         queue.push(*i);
                     }
                 }
@@ -183,17 +194,19 @@ fn remove_unused_locals(program: &mut Program) {
                 Line::ReadGlobal(t, _, _) |
                 Line::WriteGlobal(_, _, t) |
                 Line::SetAddrOf(t, _, Ident::Global(_)) |
+                Line::SetAddrOf(t, _, Ident::Stack(_)) |
                 Line::If(t, _, _) |
-                Line::SetArray(t, _, _) |
                 Line::Ret(t) => rename_temp(t, &dead, &mut dead_lines, line_index),
+                Line::StackRead(t1, _, _, t2) |
+                Line::StackWrite(_, t1, t2) |
                 Line::SetUnop(t1, _, _, t2) |
-                Line::SetAddrOf(t1, _, Ident::Temp(t2)) |
+                Line::SetAddrOf(t1, _, Ident::Reg(t2)) |
                 Line::SetTo(t1, _, t2) => {
                     rename_temp(t1, &dead, &mut dead_lines, line_index);
                     rename_temp(t2, &dead, &mut dead_lines, line_index);
                 }
-                Line::ReadFrom(t1, _, t2, t3) |
-                Line::WriteTo(t1, t2, _, t3) |
+                Line::ReadFromAddr(t1, _, t2, t3) |
+                Line::WriteToAddr(t1, t2, _, t3) |
                 Line::SetBinop(t1, _, _, t2, t3) => {
                     rename_temp(t1, &dead, &mut dead_lines, line_index);
                     rename_temp(t2, &dead, &mut dead_lines, line_index);
@@ -205,10 +218,12 @@ fn remove_unused_locals(program: &mut Program) {
                     for t in &mut **ts {
                         rename_temp(t, &dead, &mut dead_lines, line_index);
                     }
-                    if let Ident::Temp(t) = i {
+                    if let Ident::Reg(t) = i {
                         rename_temp(t, &dead, &mut dead_lines, line_index);
                     }
                 }
+                Line::StackFree(_) |
+                Line::StackAlloc(_, _) |
                 Line::Label(_) |
                 Line::Goto(_) |
                 Line::Panic(_) => ()

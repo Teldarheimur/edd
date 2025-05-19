@@ -163,6 +163,9 @@ pub fn static_eval(
             out.push(StaticDecl::SetString(place, t, res));
             Ok(())
         }
+        Expr::FieldAccess(_, structlike, field) => {
+            todo!("FieldAccess({structlike}, {field})")
+        }
         Expr::Index(_, _, _) => todo!(),
         Expr::Ref(_, Ok(_)) => todo!(),
         Expr::Array(_, _, _) => todo!(),
@@ -228,6 +231,9 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
             for (_, e) in es.iter() {
                 expr_symbol_deps(e, deps, overshadowed);
             }
+        }
+        Expr::FieldAccess(_, structlike, field) => {
+            todo!("FieldAccess({structlike}, {field})")
         }
         Expr::Index(_, a, i) => {
             expr_symbol_deps(a, deps, overshadowed);

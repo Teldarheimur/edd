@@ -98,6 +98,7 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
         | Expr::ConstUnit(_)
         | Expr::ConstString(_, _)
         | Expr::ConstNull(_) => Ok(()),
+        Expr::FieldAccess(_, e, _) |
         Expr::Ref(_, Err(e)) | Expr::Not(_, e) | Expr::Neg(_, e) | Expr::Deref(_, e) => {
             concretise_expr(e)
         }

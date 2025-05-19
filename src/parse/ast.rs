@@ -154,6 +154,7 @@ pub enum Expr {
     Not(Location, Box<Self>),
     Neg(Location, Box<Self>),
 
+    FieldAccess(Location, Box<Expr>, Rc<str>),
     Index(Location, Box<Self>, Index),
     Ref(Location, Box<Result<PlaceExpr, Self>>),
     Deref(Location, Box<Self>),
@@ -209,6 +210,7 @@ impl Display for Expr {
                 write!(f, " ({body})")
             }
             Expr::Index(_, arr, index) => write!(f, "({arr}[{index}])"),
+            Expr::FieldAccess(_, struct_like, field) => write!(f, "({struct_like}.{field})"),
             Expr::Call(_, f_name, args) => {
                 write!(f, "{f_name}(")?;
                 let mut first = true;

@@ -2,7 +2,7 @@ use std::{
     cell::RefCell, cmp::Ordering, collections::{BTreeMap, HashMap}, fmt::{self, Display}, iter, ops::Add, rc::Rc
 };
 
-use crate::flat::{Binop, Const, Global, Ident, Label, Line, Program, StaticDecl, Temp, Unop};
+use crate::flat::{Binop, Const, FlatType, Global, Ident, Label, Line, Program, StackOffset, StaticDecl, Temp, Unop};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RuntimeError {
@@ -21,13 +21,15 @@ pub enum Value {
     U16(u16),
     I32(i32),
     U32(u32),
+    // #[deprecated = "Use address to static memory instead"]
     String(Rc<str>),
     Float(f64),
 
     Function(Rc<[Line]>),
     BuiltinFn(fn(&[Value]) -> Value),
     Ref(Address),
-    
+    Slice(Address, u16),
+
     Naught,
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +78,7 @@ pub struct RuntimeState<'a> {
     store: &'a Store,
     /// Register storage (cannot be referenced)
     registers: Vec<Value>,
+    stack_vars: BTreeMap<StackOffset, (usize, usize)>,
 }
 
 impl<'a> RuntimeState<'a> {
@@ -83,18 +86,21 @@ impl<'a> RuntimeState<'a> {
         Self {
             store,
             registers: iter::once(Value::Naught).chain(args).collect(),
+            stack_vars: BTreeMap::new(),
         }
     }
     pub const fn new(&self) -> Self {
         Self {
             store: self.store,
             registers: Vec::new(),
+            stack_vars: BTreeMap::new(),
         }
     }
     pub fn get_addr<I: Into<Ident>>(&self, ident: I) -> Address {
         match ident.into() {
             Ident::Global(g) => Address::Static(self.store.global_symtab[g.inner()]),
-            Ident::Stack(s) => Address::Stack(s.inner())
+            Ident::Stack(s) => Address::Stack(s.inner()),
+            Ident::Reg(_) => unimplemented!("registers don't have an address"),
         }
     }
     pub fn set_global(&mut self, g: Global, val: Value) {
@@ -106,6 +112,20 @@ impl<'a> RuntimeState<'a> {
             self.registers.resize(index + 1, Value::Naught);
         }
         self.registers[index] = val;
+    }
+    pub fn set_stack(&mut self, so: StackOffset, i: usize, size: usize) {
+        self.stack_vars.insert(so, (i, size));
+    }
+    pub fn release_stack(&mut self, so: StackOffset) -> usize {
+        let (_i, size) = self.stack_vars.remove(&so).expect("stack ofset doesn't exist");
+        return size;
+    }
+    pub fn stack_addr(&self, so: StackOffset, offset: Temp) -> usize {
+        let i = self.stack_vars[&so].0;
+        match self.lookup(offset) {
+            Value::U16(o) => i + o as usize,
+            _ => todo!(),
+        }
     }
     pub fn read_addr(&self, addr: Address) -> Value {
         match addr {
@@ -122,7 +142,8 @@ impl<'a> RuntimeState<'a> {
     pub fn lookup<I: Into<Ident>>(&self, ident: I) -> Value {
         match ident.into() {
             Ident::Global(g) => self.store.lookup(g.inner()),
-            Ident::Temp(t) => self.registers[t.inner()].clone(),
+            Ident::Stack(so) => Value::Ref(Address::Stack(self.stack_vars[&so].0)),
+            Ident::Reg(t) => self.registers[t.inner()].clone(),
         }
     }
 }
@@ -342,7 +363,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 let val = state.lookup(src.clone());
                 state.set_temp(dest.clone(), val)
             }
-            Line::WriteTo(dest_ptr, offset, _, src) => {
+            Line::WriteToAddr(dest_ptr, offset, _, src) => {
                 let val = state.lookup(src.clone());
                 let index = match state.lookup(offset.clone()) {
                     Value::Naught => 0,
@@ -354,7 +375,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
 
                 state.write_addr(addr, val);
             }
-            Line::ReadFrom(dest, _, src_ptr, offset) => {
+            Line::ReadFromAddr(dest, _, src_ptr, offset) => {
                 let index = match state.lookup(offset.clone()) {
                     Value::Naught => 0,
                     Value::U16(i) => i,
@@ -366,16 +387,49 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
 
                 state.set_temp(dest.clone(), val);
             }
-            Line::SetArray(place, size, _item_type) => {
-                todo!("make sure stack has skipped the {size} values and write the start addr into {}", place.display());
-            }
             Line::Panic(msg) => {
                 return Err(RuntimeError::Panic(msg.clone()));
             }
             Line::Ret(name) => {
                 break Ok(state.lookup(name.clone()));
             }
+            Line::StackAlloc(so, t) => {
+                let count = size_on_stack(t);
+                let i = state.store.stack_alloc(count);
+                state.set_stack(so.clone(), i, count);
+            }
+            Line::StackFree(so) => {
+                let count = state.release_stack(so.clone());
+                state.store.stack_free(count);
+            }
+            Line::StackWrite(so, t1, t2) => {
+                let si = state.stack_addr(so.clone(), t1.clone());
+                state.store.stack.borrow_mut()[si] = state.lookup(t2.clone());
+            }
+            Line::StackRead(t1, _, so, t2) => {
+                let si = state.stack_addr(so.clone(), t2.clone());
+                let val = state.store.stack.borrow()[si].clone();
+                state.set_temp(t1.clone(), val);
+            }
         }
         line_pointer += 1;
+    }
+}
+
+fn size_on_stack(t: &FlatType) -> usize {
+    match *t {
+        FlatType::Unit |
+        FlatType::Bool |
+        FlatType::U8 |
+        FlatType::I8 |
+        FlatType::U16 |
+        FlatType::I16 |
+        FlatType::U32 |
+        FlatType::I32 |
+        FlatType::Ptr(_) |
+        FlatType::FnPtr(_, _) |
+        FlatType::Float => 1,
+        FlatType::Arr(_, len) => len as usize,
+        FlatType::Struct(ref flat_types) => flat_types.iter().map(|t| size_on_stack(t)).sum(),
     }
 }

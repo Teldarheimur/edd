@@ -65,6 +65,7 @@ pub enum Expr {
     Deref(Location, Box<Self>),
 
     Index(Location, Box<Self>, Box<Index>),
+    FieldAccess(Location, Box<Expr>, Rc<str>),
     Block(Location, Box<[Statement]>),
     Lambda(Location, Box<[(Rc<str>, Type)]>, Type, Box<Self>),
     Call(Location, Rc<str>, Box<[Self]>),
@@ -116,6 +117,7 @@ impl Expr {
             | Expr::Not(loc, _)
             | Expr::Neg(loc, _)
             | Expr::Index(loc, _, _)
+            | Expr::FieldAccess(loc, _, _)
             | Expr::Deref(loc, _)
             | Expr::Block(loc, _)
             | Expr::Lambda(loc, _, _, _)

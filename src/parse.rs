@@ -258,6 +258,15 @@ impl EddParser {
                         .collect();
                     Expr::Array(loc, exprs)
                 }
+                Rule::membered => {
+                    let loc = Location::from_span(sf, p.as_span());
+                    let mut ps = p.into_inner();
+                    let membered = Self::parse_expr(Pairs::single(ps.next().unwrap()), sf);
+                    let p = get_only_one(ps);
+                    let field = p.as_str().into();
+
+                    Expr::FieldAccess(loc, Box::new(membered), field)
+                }
                 r => unreachable!("{r:?}"),
             }.into())
             .map_infix(|lhs, op, rhs| {

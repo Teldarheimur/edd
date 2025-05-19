@@ -484,7 +484,8 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 code.extend(arg_code);
                 match f_name {
                     Ident::Global(g) => code.push(Ins::Call(Wi::Symbol(g.into_inner()))),
-                    Ident::Temp(t) => {
+                    Ident::Stack(_) => todo!(),
+                    Ident::Reg(t) => {
                         let call_reg = state.global_state.get_call_reg();
                         // HACK: using the frame pointer for register call destination
                         code.push(Ins::MoveW(Wr::Rf, state.get_wide(&t)));
@@ -502,9 +503,12 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 // get return
                 code.extend(ret_code.into_iter().chain(save_code.into_iter()));
             }
-            Line::SetArray(_, _, _) => todo!(),
-            Line::WriteTo(_, _, _, _) => todo!(),
-            Line::ReadFrom(_, _, _, _) => todo!(),
+            Line::WriteToAddr(_, _, _, _) => todo!(),
+            Line::ReadFromAddr(_, _, _, _) => todo!(),
+            Line::StackAlloc(_, _) => todo!(),
+            Line::StackFree(_) => todo!(),
+            Line::StackWrite(_, _, _) => todo!(),
+            Line::StackRead(_, _, _, _) => todo!(),
             Line::SetAddrOf(_, _, _) => todo!(),
             Line::ReadGlobal(dest, t, glbl) => {
                 let offset = state.new_wide_reg();

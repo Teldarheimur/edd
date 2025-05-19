@@ -28,6 +28,7 @@ impl Display for Value {
             }
             Value::BuiltinFn(func) => write!(f, "fn({func:p})"),
             Value::Ref(addr) => write!(f, "&{addr}"),
+            Value::Slice(addr, n) => write!(f, "&{addr}[:<{n}]"),
         }
     }
 }

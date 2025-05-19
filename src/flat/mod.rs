@@ -153,6 +153,8 @@ pub enum Line {
     SetUnop(Temp, FlatType, Unop, Temp),
     SetCall(Temp, FlatType, Ident, Box<[Temp]>),
     SetAddrOf(Temp, FlatType, Ident),
+    // /// set temp to slice of type with addr of operand1 and length of operand2
+    // SetSliceOf(Temp, FlatType, Temp, Temp),
 
     /// allocate space on stack for a (statically sized) type
     /// the offset will be represented symbolically by the `StackOffset`

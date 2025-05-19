@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 
-use crate::ttype::{
+use crate::{ttype::{
     ast::{Expr, Index, PlaceExpr, Statement}, StorageClass, Type
-};
+}};
 
 use self::state::FlattenState;
 
 use super::{
-    static_eval::static_eval, ticker::StaticNamer, Binop, Const, FlatType, Function, Global, Ident,
-    Line, StaticDecl, Temp, Unop,
+    static_eval::static_eval, ticker::StaticNamer, Binop, Const, FlatType, Function, Global, Ident, Line, StackOffset, StaticDecl, Temp, Unop
 };
 
 mod state;
@@ -134,19 +133,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             static_eval(global.clone(), t.clone(), e, &mut namer, state.statics).unwrap();
             state.add_code(Line::ReadGlobal(place, t, global));
         }
-        Expr::Array(_, t, es) => {
-            let len = es.len() as u16;
-            let t = flatten_type(*t);
-            let arr = state.new_temp("array", FlatType::Arr(Box::new(t.clone()), len));
-            state.add_code(Line::SetArray(arr.clone(), len, t.clone()));
-            for (i, e) in es.into_vec().into_iter().enumerate() {
-                let pl_e = state.new_temp("element", t.clone());
-                flatten_expr(e, t.clone(), pl_e.clone(), state);
-                let index = state.new_temp("index", FlatType::U16);
-                state.add_code(Line::SetConst(index.clone(), FlatType::U16, Const::ConstU16(i as u16)));
-                state.add_code(Line::WriteTo(arr.clone(), index, t.clone(), pl_e));
-            }
-        },
+        Expr::Array(_, _, _) => unimplemented!("needs to be stack-allocated"),
         Expr::StructConstructor(_, _) => todo!(),
         Expr::Cast(_, e, from_t, to_t) => {
             let from_t = flatten_type(*from_t);
@@ -232,6 +219,9 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             flatten_expr(*e, t.clone(), arg_place.clone(), state);
             state.add_code(Line::SetUnop(place, t, Unop::Neg, arg_place));
         }
+        Expr::FieldAccess(_, structlike, field) => {
+            todo!("FieldAccess({structlike}, {field})")
+        }
         Expr::Index(_, arr_e, index) => {
             match *index {
                 Index::Full => todo!(),
@@ -264,9 +254,10 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
                     flatten_expr(*arr_e, t.clone(), arr_place.clone(), state);
                     let ind_place = state.new_temp("index_arg", FlatType::U16);
                     flatten_expr(*ind_e, t.clone(), ind_place.clone(), state);
-                    state.add_code(Line::ReadFrom(place, t, arr_place, ind_place));
+                    state.add_code(Line::ReadFromAddr(place, t, arr_place, ind_place));
                 }
             }
+            todo!("handle correctly")
         }
         Expr::Deref(_, e) => {
             let ptr_t = FlatType::Ptr(Some(Box::new(t.clone())));
@@ -373,6 +364,30 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
     }
 }
 
+fn flatten_expr_stack(expr: Expr, t: FlatType, place: StackOffset, state: &mut FlattenState) {
+    match expr {
+        Expr::Array(_, t, es) => {
+            let len = es.len() as u16;
+            let t = flatten_type(*t);
+            let arr_t = FlatType::Arr(Box::new(t.clone()), len);
+            state.add_code(Line::StackAlloc(place.clone(), arr_t));
+            for (i, e) in es.into_vec().into_iter().enumerate() {
+                let pl_e = state.new_temp("element", t.clone());
+                flatten_expr(e, t.clone(), pl_e.clone(), state);
+                let index = state.new_temp("index", FlatType::U16);
+                state.add_code(Line::SetConst(index.clone(), FlatType::U16, Const::ConstU16(i as u16)));
+                state.add_code(Line::StackWrite(place.clone(), index, pl_e));
+            }
+        },
+        e => {
+            state.add_code(Line::StackAlloc(place.clone(), t.clone()));
+            let place_e = state.new_temp("stack_temp", t.clone());
+            flatten_expr(e, t, place_e.clone(), state);
+            state.add_code(Line::StackWrite(place, Temp::ZERO, place_e));
+        }
+    }
+}
+
 fn flatten_block(
     bl: Box<[Statement]>,
     block_t: FlatType,
@@ -401,7 +416,9 @@ fn flatten_block(
                         flatten_expr(e, t, place, state);
                     }
                     StorageClass::Stack => {
-
+                        let t = flatten_type(*t);
+                        let place = state.new_so_from_identifier(n, t.clone());
+                        flatten_expr_stack(e, t, place, state);
                     }
                     _ => unreachable!(),
                 }
@@ -416,7 +433,10 @@ fn flatten_block(
                         // `place` was set to be the ident already
                     }
                     Ident::Stack(so) => {
-                        todo!();
+                        // TODO: check if this even makes sense
+                        let place = state.new_temp(&n, ident_t.clone());
+                        flatten_expr(e, ident_t.clone(), place.clone(), state);
+                        state.add_code(Line::StackWrite(so, Temp::ZERO, place));
                     }
                     Ident::Global(g) => {
                         let place = state.new_temp(&n, ident_t.clone());
@@ -433,19 +453,31 @@ fn flatten_block(
                 let t = inner_t;
                 let place_val = state.new_temp("val", t.clone());
                 flatten_expr(e, t.clone(), place_val.clone(), state);
-                state.add_code(Line::WriteTo(place_ptr, Temp::ZERO, t, place_val))
+                state.add_code(Line::WriteToAddr(place_ptr, Temp::ZERO, t, place_val))
             }
             Statement::Assign(_, PlaceExpr::Index(_, arr_e, arr_t, ind), e) => {
                 let arr_t = flatten_type(*arr_t);
                 let place_ptr =
                     state.new_temp("arr_ptr", FlatType::Ptr(Some(Box::new(arr_t.clone()))));
-                flatten_expr(*arr_e, FlatType::Ptr(Some(Box::new(arr_t.clone()))), place_ptr.clone(), state);
+                
+                let ref_loc = arr_e.location();
+                let ref_expr = match *arr_e {
+                    Expr::Ident(loc, ident) => Ok(PlaceExpr::Ident(loc, ident)),
+                    Expr::Deref(loc, e) => Ok(PlaceExpr::Deref(loc, e, Box::new(Type::Opaque))),
+                    Expr::Index(loc, e, index) => match *index {
+                        Index::Index(ei) => Ok(PlaceExpr::Index(loc, e, Box::new(Type::Opaque), ei)),
+                        _ => todo!(),
+                    }
+                    e => Err(Box::new(e)),
+                };
+
+                flatten_expr(Expr::Ref(ref_loc, ref_expr), FlatType::Ptr(Some(Box::new(arr_t.clone()))), place_ptr.clone(), state);
                 let index = state.new_temp("arr_index", FlatType::U16);
                 flatten_expr(*ind, FlatType::U16, index.clone(), state);
                 let t = arr_t;
                 let place_val = state.new_temp("val", t.clone());
                 flatten_expr(e, t.clone(), place_val.clone(), state);
-                state.add_code(Line::WriteTo(place_ptr, index, t, place_val));
+                state.add_code(Line::WriteToAddr(place_ptr, index, t, place_val));
             }
             Statement::Assign(_, PlaceExpr::FieldAccess(_, _, _), _) => todo!(),
             Statement::Return(_, e) => {

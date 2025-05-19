@@ -157,6 +157,7 @@ impl Display for Expr {
                 Err(e) => write!(f, "&{e}"),
             },
             Expr::Neg(_, a) => write!(f, "-{a}"),
+            Expr::FieldAccess(_, sl, field) => write!(f, "{sl}.{field}"),
             Expr::Index(_, a, i) => write!(f, "{a}[{i}]"),
             Expr::Deref(_, a) => write!(f, "*{a}"),
             Expr::Array(_, t, es) => {
