@@ -224,6 +224,22 @@ fn generate_decl(decl: StaticDecl, code: &mut Vec<Ins>) {
     }
 }
 
+const fn const_16(t: Wr, n: u16) -> Ins {
+    if n < 255 {
+        let b = n as u8;
+        match t {
+            Wr::R6 => Ins::LdiB(Br::R6b, Bi::Constant(b)),
+            Wr::R7 => Ins::LdiB(Br::R7b, Bi::Constant(b)),
+            Wr::R8 => Ins::LdiB(Br::R8b, Bi::Constant(b)),
+            Wr::R9 => Ins::LdiB(Br::R9b, Bi::Constant(b)),
+            Wr::R10 => Ins::LdiB(Br::R10b, Bi::Constant(b)),
+            t => Ins::LdiW(t, Wi::Constant(n)),
+        }
+    } else {
+        Ins::LdiW(t, Wi::Constant(n))
+    }
+}
+
 fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: Function) {
     if &**name.inner() == "main" {
         // FIXME: hard-coded export of `main`
@@ -241,10 +257,8 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                     code.push(Ins::LdiB(state.get_byte(&t), Bi::Constant(b as u8)))
                 }
                 Const::ConstU8(b) => code.push(Ins::LdiB(state.get_byte(&t), Bi::Constant(b))),
-                Const::ConstI16(w) => {
-                    code.push(Ins::LdiW(state.get_wide(&t), Wi::Constant(w as u16)))
-                }
-                Const::ConstU16(w) => code.push(Ins::LdiW(state.get_wide(&t), Wi::Constant(w))),
+                Const::ConstI16(w) => code.push(const_16(state.get_wide(&t), w as u16)),
+                Const::ConstU16(w) => code.push(const_16(state.get_wide(&t), w)),
                 Const::ConstI32(dw) => {
                     let (l, h) = split_u32(dw as u32);
                     let (lr, hr) = state.get_dwide(&t);
@@ -260,16 +274,23 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 Const::ConstFloat(_) => todo!(),
                 Const::ConstZero => {
                     // make sure the temporary exists in the database
-                    _ = state.get(&t, Some(&ty));
                     match ty {
                         // cheap!
                         FlatType::Unit => (),
-                        FlatType::U8 | FlatType::I8 => todo!("load zero byte"),
+                        FlatType::U8 | FlatType::I8 => {
+                            code.push(Ins::MoveB(state.get_byte(&t), R0b));
+                        }
                         FlatType::Ptr(_)
                         | FlatType::FnPtr(_, _)
                         | FlatType::U16
-                        | FlatType::I16 => todo!("load zero wide"),
-                        FlatType::U32 | FlatType::I32 => todo!("load zero dwide"),
+                        | FlatType::I16 => {
+                            code.push(Ins::MoveW(state.get_wide(&t), R0));
+                        }
+                        FlatType::U32 | FlatType::I32 => {
+                            let (lr, hr) = state.get_dwide(&t);
+                            code.push(Ins::MoveW(lr, Wr::R0));
+                            code.push(Ins::MoveW(hr, Wr::R0));
+                        }
                         FlatType::Float => unimplemented!(),
                         _ => unreachable!("type cannot get value 0"),
                     }
@@ -588,7 +609,10 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 // TODO: put the right value here to clean up objects stored in stack-space
                 code.push(Ins::Ret(Bi::Constant(0)));
             }
-            Line::Panic(_) => todo!(),
+            Line::Panic(_) => {
+                // TODO: print the error message
+                code.push(Ins::Null);
+            }
         }
     }
     code.push(Ins::FunctionEndMarker);
