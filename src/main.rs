@@ -88,7 +88,7 @@ fn main() {
             match run_prgm(program) {
                 Ok(Value::Naught) => (),
                 Ok(v) => println!("Returned {v}"),
-                Err(RuntimeError::Panic(msg)) => eprintln!("Error: Panic {}{msg}", path.display()),
+                Err(RuntimeError::Panic(msg)) => eprintln!("Error: Panic {msg}"),
                 Err(RuntimeError::InvalidMain) => eprintln!("Error: Invalid main function"),
             }
         Backend::Telda => {

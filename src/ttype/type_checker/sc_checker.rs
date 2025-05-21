@@ -1,5 +1,5 @@
 use crate::ttype::{
-    ast::{Decl, Expr, Index, PlaceExpr, Program, Statement}, Result, StorageClass, Type,
+    ast::{Decl, Expr, PlaceExpr, Program, SliceEndIndex, Statement}, Result, StorageClass, Type,
 };
 
 // TODO: check if a variable is ever addrof'd and make sure its storage class is stack
@@ -33,9 +33,9 @@ fn check_expr(e: &mut Expr) {
         Expr::ConstUnit(_) |
         Expr::ConstString(_, _) |
         Expr::ConstNull(_) => (),
-        Expr::Ref(_, place_expr) => match place_expr {
-            Ok(place_expr) => check_place_expr(place_expr),
-            Err(e) => check_expr(e),
+        Expr::SliceOfArray(_, Ok(pe)) |
+        Expr::Ref(_, Ok(pe)) => {
+            check_place_expr(pe);
         }
         Expr::Array(_, _, exprs) => for expr in exprs {
             check_expr(expr);
@@ -55,6 +55,8 @@ fn check_expr(e: &mut Expr) {
         Expr::Sub(_, e1, e2) |
         Expr::Mul(_, e1, e2) |
         Expr::Div(_, e1, e2) |
+        Expr::Element(_, e1, e2) |
+        Expr::Slice(_, e1, e2, SliceEndIndex::Open) |
         Expr::Concat(_, e1, e2) => {
             check_expr(e1);
             check_expr(e2);
@@ -64,25 +66,10 @@ fn check_expr(e: &mut Expr) {
         Expr::Cast(_, e, _, _) |
         Expr::Neg(_, e) |
         Expr::FieldAccess(_, e, _) |
+        Expr::SliceOfArray(_, Err(e)) |
+        Expr::Ref(_, Err(e)) |
         Expr::Deref(_, e) => {
             check_expr(e);
-        }
-        Expr::Index(_, e, index) => {
-            check_expr(e);
-            match &mut **index {
-                Index::Full => (),
-                Index::Index(e) |
-                Index::RangeFrom(e) |
-                Index::RangeToExcl(e) |
-                Index::RangeToIncl(e) => {
-                    check_expr(e);
-                }
-                Index::RangeExcl(e1, e2) |
-                Index::RangeIncl(e1, e2) => {
-                    check_expr(e1);
-                    check_expr(e2);
-                }
-            }
         }
         Expr::Block(_, statements) => for statement in statements {
             match statement {
@@ -127,6 +114,8 @@ fn check_expr(e: &mut Expr) {
                 check_expr(e);
             }
         }
+        Expr::Slice(_, e1, e2, SliceEndIndex::Excl(e3)) |
+        Expr::Slice(_, e1, e2, SliceEndIndex::Incl(e3)) |
         Expr::If(_, e1, e2, e3) => {
             check_expr(e1);
             check_expr(e2);
@@ -137,7 +126,7 @@ fn check_expr(e: &mut Expr) {
 
 fn check_place_expr(place_expr: &mut PlaceExpr) {
     match place_expr {
-        PlaceExpr::Index(_, e1, _, e2) => {
+        PlaceExpr::Element(_, e1, _, e2) => {
             check_expr(e1);
             check_expr(e2);
         }

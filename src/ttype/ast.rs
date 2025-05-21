@@ -29,8 +29,24 @@ pub enum Statement {
 pub enum PlaceExpr {
     Ident(Location, Rc<str>),
     Deref(Location, Box<Expr>, Box<Type>),
-    Index(Location, Box<Expr>, Box<Type>, Box<Expr>),
+    /// slice, element type, index (: u16)
+    Element(Location, Box<Expr>, Box<Type>, Box<Expr>),
     FieldAccess(Location, Box<Expr>, Rc<str>),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum SliceEndIndex<T> {
+    Open,
+    Excl(T),
+    Incl(T),
+}
+impl<T> SliceEndIndex<T> {
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> SliceEndIndex<U> {
+        match self {
+            Self::Open => SliceEndIndex::Open,
+            Self::Excl(e) => SliceEndIndex::Excl(f(e)),
+            Self::Incl(e) => SliceEndIndex::Incl(f(e)),
+        }
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -64,7 +80,12 @@ pub enum Expr {
     Neg(Location, Box<Self>),
     Deref(Location, Box<Self>),
 
-    Index(Location, Box<Self>, Box<Index>),
+    /// Optain element of slice at index
+    Element(Location, Box<Self>, Box<Self>),
+    /// Make a slice from the given array
+    SliceOfArray(Location, Result<PlaceExpr, Box<Self>>),
+    /// Make a slice from a slice with the given index range
+    Slice(Location, Box<Self>, Box<Self>, SliceEndIndex<Box<Self>>),
     FieldAccess(Location, Box<Expr>, Rc<str>),
     Block(Location, Box<[Statement]>),
     Lambda(Location, Box<[(Rc<str>, Type)]>, Type, Box<Self>),
@@ -78,17 +99,6 @@ pub enum Expr {
     Gt(Location, Box<Self>, Box<Self>, Box<Type>),
     Gte(Location, Box<Self>, Box<Self>, Box<Type>),
 }
-#[derive(Debug, Clone, PartialEq)]
-pub enum Index {
-    Full,
-    Index(Box<Expr>),
-    RangeFrom(Box<Expr>),
-    RangeToExcl(Box<Expr>),
-    RangeToIncl(Box<Expr>),
-    RangeExcl(Box<Expr>, Box<Expr>),
-    RangeIncl(Box<Expr>, Box<Expr>),
-}
-
 impl Expr {
     pub(crate) fn location(&self) -> Location {
         match self {
@@ -116,7 +126,9 @@ impl Expr {
             | Expr::Concat(loc, _, _)
             | Expr::Not(loc, _)
             | Expr::Neg(loc, _)
-            | Expr::Index(loc, _, _)
+            | Expr::Element(loc, _, _)
+            | Expr::SliceOfArray(loc, _)
+            | Expr::Slice(loc, _, _, _)
             | Expr::FieldAccess(loc, _, _)
             | Expr::Deref(loc, _)
             | Expr::Block(loc, _)

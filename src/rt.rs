@@ -1,16 +1,20 @@
 use std::{
-    cell::RefCell, cmp::Ordering, collections::{BTreeMap, HashMap}, fmt::{self, Display}, iter, ops::Add, rc::Rc
+    cmp::Ordering, collections::BTreeMap, fmt::{self, Display}, iter, ops::Add, rc::Rc
 };
 
-use crate::flat::{Binop, Const, FlatType, Global, Ident, Label, Line, Program, StackOffset, StaticDecl, Temp, Unop};
+use crate::flat::{Binop, Const, FlatType, Global, Label, Line, Program, StackVar, StaticDecl, Temp, Unop};
+
+mod value_impl;
+mod store;
+
+pub use store::Store;
+use store::{StackOffset, StackSpace};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RuntimeError {
     Panic(Box<str>),
     InvalidMain,
 }
-
-mod value_impl;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -28,9 +32,15 @@ pub enum Value {
     Function(Rc<[Line]>),
     BuiltinFn(fn(&[Value]) -> Value),
     Ref(Address),
-    Slice(Address, u16),
+    Struct(Rc<[Value]>),
 
     Naught,
+}
+impl Value {
+    #[allow(non_snake_case)]
+    pub fn Slice(ptr: Address, len: u16) -> Self {
+        Self::Struct(Rc::new([Value::Ref(ptr), Value::U16(len)]))
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Address {
@@ -63,22 +73,12 @@ pub enum SymbolError {
     NotMutable,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Store {
-    /// Static storage
-    global_values: Vec<RefCell<Value>>,
-    /// Symbols to the static storage
-    global_symtab: HashMap<Rc<str>, usize>,
-    /// Automatic storage
-    stack: RefCell<Vec<Value>>,
-}
-
 #[derive(Debug, Clone)]
 pub struct RuntimeState<'a> {
     store: &'a Store,
     /// Register storage (cannot be referenced)
     registers: Vec<Value>,
-    stack_vars: BTreeMap<StackOffset, (usize, usize)>,
+    stack_vars: Vec<StackSpace>,
 }
 
 impl<'a> RuntimeState<'a> {
@@ -86,22 +86,40 @@ impl<'a> RuntimeState<'a> {
         Self {
             store,
             registers: iter::once(Value::Naught).chain(args).collect(),
-            stack_vars: BTreeMap::new(),
+            stack_vars: Vec::new(),
         }
     }
     pub const fn new(&self) -> Self {
         Self {
             store: self.store,
             registers: Vec::new(),
-            stack_vars: BTreeMap::new(),
+            stack_vars: Vec::new(),
         }
     }
-    pub fn get_addr<I: Into<Ident>>(&self, ident: I) -> Address {
-        match ident.into() {
-            Ident::Global(g) => Address::Static(self.store.global_symtab[g.inner()]),
-            Ident::Stack(s) => Address::Stack(s.inner()),
-            Ident::Reg(_) => unimplemented!("registers don't have an address"),
+    pub fn read_reg(&self, temp: Temp) -> Value {
+        self.registers[temp.inner()].clone()
+    }
+    pub fn resolve_ptr(&self, temp: Temp) -> Address {
+        match self.read_reg(temp) {
+            Value::Ref(addr) => addr,
+            val => unimplemented!("value was not a reference: {val}"),
         }
+    }
+    pub fn resolve_stackvar(&self, sv: StackVar) -> StackOffset {
+        let mut offset = 0;
+        for ss in self.stack_vars.iter().rev() {
+            offset += ss.size;
+            if ss.stack_var == sv {
+                return StackOffset(offset)
+            }
+        }
+        panic!("stackvar {} has not been allocated or is freed", sv.display());
+    }
+    pub fn get_addr_global(&self, global: Global) -> Address {
+        self.store.global_addr(global.inner())
+    }
+    pub fn get_addr_stack(&self, sv: StackVar) -> Address {
+        self.store.resolve_stack_offset(self.resolve_stackvar(sv))
     }
     pub fn set_global(&mut self, g: Global, val: Value) {
         self.store.mutate(g.inner(), val)
@@ -113,93 +131,32 @@ impl<'a> RuntimeState<'a> {
         }
         self.registers[index] = val;
     }
-    pub fn set_stack(&mut self, so: StackOffset, i: usize, size: usize) {
-        self.stack_vars.insert(so, (i, size));
+    pub fn alloc_stack(&mut self, sv: StackVar, count: usize) {
+        self.store.stack_alloc(count);
+        self.stack_vars.push(StackSpace::new(count, sv));
     }
-    pub fn release_stack(&mut self, so: StackOffset) -> usize {
-        let (_i, size) = self.stack_vars.remove(&so).expect("stack ofset doesn't exist");
-        return size;
+    pub fn release_stack(&mut self, sv: StackVar) {
+        let stack_space = self.stack_vars.pop().unwrap();
+        assert_eq!(stack_space.stack_var, sv, "released stackvar was not the most recent");
+        self.store.stack_free(stack_space.size);
     }
-    pub fn stack_addr(&self, so: StackOffset, offset: Temp) -> usize {
-        let i = self.stack_vars[&so].0;
-        match self.lookup(offset) {
-            Value::U16(o) => i + o as usize,
-            Value::Naught => i,
+    pub fn stack_addr(&self, sv: StackVar, offset: Temp) -> Address {
+        let stack_offset = self.resolve_stackvar(sv);
+        let offset = match self.read_reg(offset) {
+            Value::U16(o) => o,
+            Value::Naught => 0,
             v => todo!("{v:?} {v}"),
-        }
+        };
+        self.store.resolve_stack_offset(stack_offset) + offset
     }
     pub fn read_addr(&self, addr: Address) -> Value {
-        match addr {
-            Address::Static(i) => self.store.global_values[i].borrow().clone(),
-            Address::Stack(i) => self.registers[i].clone(),
-        }
+        self.store.read_addr(addr)
     }
-    pub fn write_addr(&mut self, addr: Address, val: Value) {
-        match addr {
-            Address::Static(i) => *self.store.global_values[i].borrow_mut() = val,
-            Address::Stack(i) => self.registers[i] = val,
-        }
+    pub fn write_addr(&self, addr: Address, val: Value) {
+        self.store.write_addr(addr, val);
     }
-    pub fn lookup<I: Into<Ident>>(&self, ident: I) -> Value {
-        match ident.into() {
-            Ident::Global(g) => self.store.lookup(g.inner()),
-            Ident::Stack(so) => Value::Ref(Address::Stack(self.stack_vars[&so].0)),
-            Ident::Reg(t) => self.registers[t.inner()].clone(),
-        }
-    }
-}
-
-impl Store {
-    #[inline]
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn add_func<S: Into<Rc<str>>>(&mut self, name: S, f: fn(&[Value]) -> Value) {
-        self.add_var(name, Value::BuiltinFn(f))
-    }
-    pub fn add_var<S: Into<Rc<str>>>(&mut self, name: S, val: Value) {
-        let name = name.into();
-        
-        let index = self.global_values.len();
-        self.global_values.push(RefCell::new(val));
-        self.global_symtab.insert(name, index);
-    }
-    pub fn add_array<S: Into<Rc<str>>>(&mut self, name: S, vals: impl Iterator<Item=Value>) {
-        let name = name.into();
-        let index = self.global_values.len();
-        self.global_symtab.insert(name, index);
-
-        self.global_values.extend(vals.map(RefCell::new));
-    }
-    pub fn lookup(&self, name: &str) -> Value {
-        let index = self.global_symtab[name];
-        self.global_values[index].borrow().clone()
-    }
-    pub fn lookup_with_offset(&self, name: &str, offset: u16) -> Value {
-        let index = self.global_symtab[name] + offset as usize;
-        self.global_values[index].borrow().clone()
-    }
-    pub fn mutate(&self, name: &str, new_val: Value) {
-        let index = self.global_symtab[name];
-        let var = &self.global_values[index];
-        *var.borrow_mut() = new_val;
-    }
-    pub fn mutate_with_offset(&self, name: &str, new_val: Value, offset: u16) {
-        let index = self.global_symtab[name] + offset as usize;
-        let var = &self.global_values[index];
-        *var.borrow_mut() = new_val;
-    }
-
-    pub fn stack_alloc(&self, count: usize) -> usize {
-        let mut stack = self.stack.borrow_mut();
-        let index = stack.len();
-        stack.resize(index+count, Value::Naught);
-        index
-    }
-    pub fn stack_free(&self, count: usize) {
-        let mut stack = self.stack.borrow_mut();
-        let size = stack.len();
-        stack.resize_with(size-count, || unreachable!());
+    pub fn lookup(&self, global: Global) -> Value {
+        self.store.lookup(global.inner())
     }
 }
 
@@ -232,7 +189,7 @@ pub fn run(program: Program, gs: &mut Store) -> Result<Value, RuntimeError> {
                 gs.add_array(n.into_inner(), vals.into_vec().into_iter().map(const_to_val));
             }
             StaticDecl::SetPtr(n, _, val) => {
-                let ptr = Value::Ref(Address::Static(gs.global_symtab[val.inner()]));
+                let ptr = Value::Ref(gs.global_addr(val.inner()));
                 gs.add_var(n.into_inner(), ptr);
             }
             StaticDecl::External(n, _) => {
@@ -280,12 +237,12 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
         match line {
             Line::SetConst(name, _, val) => state.set_temp(name.clone(), const_to_val(*val)),
             Line::SetTo(name, _, val) => {
-                let val = state.lookup(val.clone());
+                let val = state.read_reg(val.clone());
                 state.set_temp(name.clone(), val);
             }
             Line::SetBinop(dest, _, binop, left, right) => {
-                let left = state.lookup(left.clone());
-                let right = state.lookup(right.clone());
+                let left = state.read_reg(left.clone());
+                let right = state.read_reg(right.clone());
 
                 let val = match binop {
                     Binop::Add => left + right,
@@ -301,12 +258,27 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 };
                 state.set_temp(dest.clone(), val);
             }
-            Line::SetAddrOf(dest, _, src) => {
-                let ptr = state.get_addr(src.clone());
+            Line::SetAddrOfGlobal(dest, _, src) => {
+                let ptr = state.get_addr_global(src.clone());
                 state.set_temp(dest.clone(), Value::Ref(ptr));
             }
+            Line::SetAddrOfStackVar(dest, _, src) => {
+                let ptr = state.get_addr_stack(src.clone());
+                state.set_temp(dest.clone(), Value::Ref(ptr));
+            }
+            Line::SetStruct(dest, _, ts) => {
+                let val = Value::Struct(ts.iter().cloned().map(|t| state.read_reg(t)).collect());
+                state.set_temp(dest.clone(), val);
+            }
+            Line::SetFieldOfTemp(dest, _, src, field) => {
+                let val = match state.read_reg(src.clone()) {
+                    Value::Struct(fields) => fields[(*field) as usize].clone(),
+                    _ => unimplemented!(),
+                };
+                state.set_temp(dest.clone(), val);
+            }
             Line::SetUnop(dest, _, unop, operand) => {
-                let operand = state.lookup(operand.clone());
+                let operand = state.read_reg(operand.clone());
                 let val = match *unop {
                     Unop::Not => match operand {
                         Value::Boolean(b) => Value::Boolean(!b),
@@ -320,24 +292,15 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 };
                 state.set_temp(dest.clone(), val);
             }
+            Line::SetCallTemp(dest, _, f_ptr, args) => {
+                let f = state.read_reg(f_ptr.clone());
+                let val = call_value(f, state, args)?;
+
+                state.set_temp(dest.clone(), val);
+            }
             Line::SetCall(dest, _, name, args) => {
                 let f = state.lookup(name.clone());
-
-                let val;
-                if let Value::BuiltinFn(f) = f {
-                    let args: Box<[_]> = args.iter().map(|arg| state.lookup(arg.clone())).collect();
-
-                    val = f(&args);
-                } else if let Value::Function(f_lines) = f {
-                    let mut f_rs = RuntimeState::with_args(
-                        state.store,
-                        args.iter().map(|arg| state.lookup(arg.clone())),
-                    );
-
-                    val = run_lines(&f_lines, &mut f_rs)?;
-                } else {
-                    unreachable!("call on non-function");
-                }
+                let val = call_value(f, state, args)?;
 
                 state.set_temp(dest.clone(), val);
             }
@@ -345,7 +308,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 label_cache.insert(lbl.clone(), line_pointer);
             }
             Line::If(cond, lbl_true, lbl_false) => {
-                match state.lookup(cond.clone()) {
+                match state.read_reg(cond.clone()) {
                     Value::Boolean(true) => goto(&mut line_pointer, lbl_true, &label_cache),
                     Value::Boolean(false) => goto(&mut line_pointer, lbl_false, &label_cache),
                     _ => unreachable!("non-boolean condition"),
@@ -357,7 +320,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 continue;
             }
             Line::WriteGlobal(dest, _, src) => {
-                let val = state.lookup(src.clone());
+                let val = state.read_reg(src.clone());
                 state.set_global(dest.clone(), val);
             }
             Line::ReadGlobal(dest, _, src) => {
@@ -365,24 +328,24 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 state.set_temp(dest.clone(), val)
             }
             Line::WriteToAddr(dest_ptr, offset, _, src) => {
-                let val = state.lookup(src.clone());
-                let index = match state.lookup(offset.clone()) {
+                let val = state.read_reg(src.clone());
+                let index = match state.read_reg(offset.clone()) {
                     Value::Naught => 0,
                     Value::U16(i) => i,
                     _ => unreachable!(),
                 };
 
-                let addr = state.get_addr(dest_ptr.clone()) + index;
+                let addr = state.resolve_ptr(dest_ptr.clone()) + index;
 
                 state.write_addr(addr, val);
             }
             Line::ReadFromAddr(dest, _, src_ptr, offset) => {
-                let index = match state.lookup(offset.clone()) {
+                let index = match state.read_reg(offset.clone()) {
                     Value::Naught => 0,
                     Value::U16(i) => i,
                     _ => unreachable!(),
                 };
-                let addr = state.get_addr(src_ptr.clone()) + index;
+                let addr = state.resolve_ptr(src_ptr.clone()) + index;
 
                 let val = state.read_addr(addr);
 
@@ -392,28 +355,44 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                 return Err(RuntimeError::Panic(msg.clone()));
             }
             Line::Ret(name) => {
-                break Ok(state.lookup(name.clone()));
+                break Ok(state.read_reg(name.clone()));
             }
             Line::StackAlloc(so, t) => {
-                let count = size_on_stack(t);
-                let i = state.store.stack_alloc(count);
-                state.set_stack(so.clone(), i, count);
+                state.alloc_stack(so.clone(), size_on_stack(t));
             }
             Line::StackFree(so) => {
-                let count = state.release_stack(so.clone());
-                state.store.stack_free(count);
+                state.release_stack(so.clone());
             }
             Line::StackWrite(so, t1, t2) => {
-                let si = state.stack_addr(so.clone(), t1.clone());
-                state.store.stack.borrow_mut()[si] = state.lookup(t2.clone());
+                let addr = state.stack_addr(so.clone(), t1.clone());
+                let val = state.read_reg(t2.clone());
+
+                state.write_addr(addr, val);
             }
             Line::StackRead(t1, _, so, t2) => {
-                let si = state.stack_addr(so.clone(), t2.clone());
-                let val = state.store.stack.borrow()[si].clone();
+                let addr = state.stack_addr(so.clone(), t2.clone());
+                let val = state.read_addr(addr);
                 state.set_temp(t1.clone(), val);
             }
         }
         line_pointer += 1;
+    }
+}
+
+fn call_value(f: Value, state: &mut RuntimeState, args: &[Temp]) -> Result<Value, RuntimeError> {
+    if let Value::BuiltinFn(f) = f {
+        let args: Box<[_]> = args.iter().map(|arg| state.read_reg(arg.clone())).collect();
+
+        Ok(f(&args))
+    } else if let Value::Function(f_lines) = f {
+        let mut f_rs = RuntimeState::with_args(
+            state.store,
+            args.iter().map(|arg| state.read_reg(arg.clone())),
+        );
+
+        run_lines(&f_lines, &mut f_rs)
+    } else {
+        unreachable!("call on non-function");
     }
 }
 

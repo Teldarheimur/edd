@@ -145,8 +145,7 @@ impl EddParser {
             Rule::array => {
                 let mut ps = t.into_inner();
                 let size = ps.next().unwrap().as_str().parse().unwrap();
-                let t = get_only_one(ps).into_inner();
-                Type::Array(Box::new(Self::parse_type(t).unwrap()), size)
+                Type::Array(Box::new(Self::parse_type(ps).unwrap()), size)
             }
             Rule::fntype => {
                 let mut ft = t.into_inner();

@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, rc::Rc};
 
 use crate::flat::{
-    Binop, Const, FlatType, Function, Global, Ident, Label, Line, Program, StaticDecl, Temp, Unop,
+    Binop, Const, FlatType, Function, Global, Label, Line, Program, StaticDecl, Temp, Unop,
 };
 
 use super::{Bi, Br, Br::*, Ins, Wi, Wr, Wr::*, Reg};
@@ -439,98 +439,27 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 }
                 _ => todo!(),
             },
-            Line::SetCall(dest, t, f_name, arguments) => {
-                let mut arg_stack = vec![R9, R8, R7, R6];
-
-                let mut ret_code = Vec::new();
-                let save_r1;
-                { // generate return value code
-                    let mut ret_reg = Some(R1);
-                    for ret_dest in state.get(&dest, Some(&t)) {
-                        match (*ret_dest, ret_reg.take()) {
-                            (Reg::WideReg(wr), Some(ret_reg)) => ret_code.push(Ins::MoveW(wr, ret_reg)),
-                            (Reg::WideReg(wr), None) => {
-                                ret_code.push(Ins::PopW(wr));
-                            }
-                            (Reg::ByteReg(br), Some(ret_reg)) => {
-                                ret_code.push(Ins::MoveB(br, Br::try_from_wr(ret_reg).unwrap()))
-                            }
-                            (Reg::ByteReg(br), None) => {
-                                ret_code.push(Ins::PopB(br));
-                            }
-                        }
-                    }
-                    // If we didn't use `R1` for a return value, we should save it
-                    save_r1 = ret_reg.is_some();
-                }
-
-                // set arguments
-                let mut regs = Vec::new();
-                for arg in arguments.into_vec() {
-                    for &reg in state.get(&arg, None) {
-                        regs.push(reg);
-                    }
-                }
-                let mut arg_code = Vec::new();
-                for arg in regs {
-                    let arg_reg = arg_stack.pop();
-                    match arg {
-                        Reg::WideReg(wr) => {
-                            if let Some(arg_reg) = arg_reg {
-                                arg_code.push(Ins::MoveW(arg_reg, wr));
-                            } else {
-                                arg_code.push(Ins::PushW(wr));
-                            }
-                        }
-                        Reg::ByteReg(br) => {
-                            if let Some(arg_reg) = arg_reg {
-                                arg_code.push(Ins::MoveB(Br::try_from_wr(arg_reg).unwrap(), br));
-                            } else {
-                                arg_code.push(Ins::PushB(br));
-                            }
-                        }
-                    }
-                }
-                let save_regs = {
-                    arg_stack.push(Rl);
-                    arg_stack
-                };
-                // call function and save registers (that aren't arguments)
-                for &save in &save_regs {
-                    code.push(Ins::PushW(save));
-                }
-                if save_r1 {
-                    code.push(Ins::PushW(R1));
-                }
-                code.extend(arg_code);
-                match f_name {
-                    Ident::Global(g) => code.push(Ins::Call(Wi::Symbol(g.into_inner()))),
-                    Ident::Stack(_) => todo!(),
-                    Ident::Reg(t) => {
-                        let call_reg = state.global_state.get_call_reg();
-                        // HACK: using the frame pointer for register call destination
-                        code.push(Ins::MoveW(Wr::Rf, state.get_wide(&t)));
-                        code.push(Ins::Call(Wi::Symbol(call_reg)));
-                    }
-                }
-                let mut save_code = Vec::with_capacity(save_regs.len() + (save_r1) as usize);
-                if save_r1 {
-                    save_code.push(Ins::PopW(R1));
-                }
-                for &save in save_regs.iter().rev() {
-                    save_code.push(Ins::PopW(save));
-                }
-
-                // get return
-                code.extend(ret_code.into_iter().chain(save_code.into_iter()));
+            Line::SetCall(dest, t, g, arguments) => {
+                generate_call(code, &mut state, dest, t, [Ins::Call(Wi::Symbol(g.into_inner()))], arguments);
             }
+            Line::SetCallTemp(dest, t, temp, arguments) => {
+                let call_code = {
+                    let call_reg = state.global_state.get_call_reg();
+                    // HACK: using the frame pointer for register call destination
+                    [Ins::MoveW(Wr::Rf, state.get_wide(&temp)), Ins::Call(Wi::Symbol(call_reg))]
+                };
+                generate_call(code, &mut state, dest, t, call_code, arguments);
+            }
+            Line::SetStruct(_, _, _) => todo!(),
+            Line::SetFieldOfTemp(_, _, _, _) => todo!(),
             Line::WriteToAddr(_, _, _, _) => todo!(),
             Line::ReadFromAddr(_, _, _, _) => todo!(),
             Line::StackAlloc(_, _) => todo!(),
             Line::StackFree(_) => todo!(),
             Line::StackWrite(_, _, _) => todo!(),
             Line::StackRead(_, _, _, _) => todo!(),
-            Line::SetAddrOf(_, _, _) => todo!(),
+            Line::SetAddrOfGlobal(_, _, _) => todo!(),
+            Line::SetAddrOfStackVar(_, _, _) => todo!(),
             Line::ReadGlobal(dest, t, glbl) => {
                 let offset = state.new_wide_reg();
                 let one = state.new_wide_reg();
@@ -689,4 +618,81 @@ fn generate_set_binop_rel(code: &mut Vec<Ins>, state: &mut FunctionState<'_>, r:
     code.push(Ins::Label(true_label));
     code.push(Ins::LdiB(dest, Bi::Constant(1)));
     code.push(Ins::Label(end_label));
+}
+
+fn generate_call(code: &mut Vec<Ins>, state: &mut FunctionState<'_>, dest: Temp, t: FlatType, call_code: impl IntoIterator<Item = Ins>, arguments: Box<[Temp]>) {
+    let mut arg_stack = vec![R9, R8, R7, R6];
+
+    let mut ret_code = Vec::new();
+    let save_r1;
+    { // generate return value code
+        let mut ret_reg = Some(R1);
+        for ret_dest in state.get(&dest, Some(&t)) {
+            match (*ret_dest, ret_reg.take()) {
+                (Reg::WideReg(wr), Some(ret_reg)) => ret_code.push(Ins::MoveW(wr, ret_reg)),
+                (Reg::WideReg(wr), None) => {
+                    ret_code.push(Ins::PopW(wr));
+                }
+                (Reg::ByteReg(br), Some(ret_reg)) => {
+                    ret_code.push(Ins::MoveB(br, Br::try_from_wr(ret_reg).unwrap()))
+                }
+                (Reg::ByteReg(br), None) => {
+                    ret_code.push(Ins::PopB(br));
+                }
+            }
+        }
+        // If we didn't use `R1` for a return value, we should save it
+        save_r1 = ret_reg.is_some();
+    }
+
+    // set arguments
+    let mut regs = Vec::new();
+    for arg in arguments.into_vec() {
+        for &reg in state.get(&arg, None) {
+            regs.push(reg);
+        }
+    }
+    let mut arg_code = Vec::new();
+    for arg in regs {
+        let arg_reg = arg_stack.pop();
+        match arg {
+            Reg::WideReg(wr) => {
+                if let Some(arg_reg) = arg_reg {
+                    arg_code.push(Ins::MoveW(arg_reg, wr));
+                } else {
+                    arg_code.push(Ins::PushW(wr));
+                }
+            }
+            Reg::ByteReg(br) => {
+                if let Some(arg_reg) = arg_reg {
+                    arg_code.push(Ins::MoveB(Br::try_from_wr(arg_reg).unwrap(), br));
+                } else {
+                    arg_code.push(Ins::PushB(br));
+                }
+            }
+        }
+    }
+    let save_regs = {
+        arg_stack.push(Rl);
+        arg_stack
+    };
+    // call function and save registers (that aren't arguments)
+    for &save in &save_regs {
+        code.push(Ins::PushW(save));
+    }
+    if save_r1 {
+        code.push(Ins::PushW(R1));
+    }
+    code.extend(arg_code);
+    code.extend(call_code);
+    let mut save_code = Vec::with_capacity(save_regs.len() + (save_r1) as usize);
+    if save_r1 {
+        save_code.push(Ins::PopW(R1));
+    }
+    for &save in save_regs.iter().rev() {
+        save_code.push(Ins::PopW(save));
+    }
+
+    // get return
+    code.extend(ret_code.into_iter().chain(save_code.into_iter()));
 }

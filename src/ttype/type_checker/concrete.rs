@@ -1,9 +1,7 @@
-use std::ops::DerefMut;
-
 use crate::{
     parse::location::Location,
     ttype::{
-        ast::{Expr, Index, PlaceExpr, Statement},
+        ast::{Expr, PlaceExpr, SliceEndIndex, Statement},
         Result, Type,
     },
 };
@@ -75,7 +73,7 @@ fn concretise_pexpr(p: &mut PlaceExpr) -> Result<()> {
             concretise_expr(e)?;
             concretise_type(loc.clone(), t)
         }
-        PlaceExpr::Index(loc, e, t, ind) => {
+        PlaceExpr::Element(loc, e, t, ind) => {
             concretise_expr(e)?;
             concretise_type(loc.clone(), t)?;
             concretise_expr(ind)
@@ -99,6 +97,7 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
         | Expr::ConstString(_, _)
         | Expr::ConstNull(_) => Ok(()),
         Expr::FieldAccess(_, e, _) |
+        Expr::SliceOfArray(_, Err(e)) |
         Expr::Ref(_, Err(e)) | Expr::Not(_, e) | Expr::Neg(_, e) | Expr::Deref(_, e) => {
             concretise_expr(e)
         }
@@ -114,6 +113,7 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
             concretise_type(loc.clone(), t1)?;
             concretise_type(loc.clone(), t2)
         }
+        Expr::SliceOfArray(_, Ok(pl_e)) |
         Expr::Ref(_, Ok(pl_e)) => concretise_pexpr(pl_e),
         Expr::Block(_, stmnts) => concretise_statements(stmnts),
         Expr::StructConstructor(_, es) => {
@@ -121,24 +121,6 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
                 concretise_expr(e)?;
             }
             Ok(())
-        }
-        Expr::Index(_, e1, i) => {
-            concretise_expr(e1)?;
-            match i.deref_mut() {
-                Index::Full => Ok(()),
-                Index::Index(e) => concretise_expr(e),
-                Index::RangeFrom(e) => concretise_expr(e),
-                Index::RangeToExcl(e) => concretise_expr(e),
-                Index::RangeToIncl(e) => concretise_expr(e),
-                Index::RangeExcl(e1, e2) => {
-                    concretise_expr(e1)?;
-                    concretise_expr(e2)
-                }
-                Index::RangeIncl(e1, e2) => {
-                    concretise_expr(e1)?;
-                    concretise_expr(e2)
-                }
-            }
         }
         Expr::Call(_, _, es) => {
             for e in es.iter_mut() {
@@ -153,6 +135,8 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
             }
             Ok(())
         }
+        Expr::Slice(_, e, e2, SliceEndIndex::Excl(e3)) |
+        Expr::Slice(_, e, e2, SliceEndIndex::Incl(e3)) |
         Expr::If(_, e, e2, e3) => {
             concretise_expr(e)?;
             concretise_expr(e2)?;
@@ -162,6 +146,8 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
         | Expr::Sub(_, e1, e2)
         | Expr::Mul(_, e1, e2)
         | Expr::Div(_, e1, e2)
+        | Expr::Slice(_, e1, e2, SliceEndIndex::Open)
+        | Expr::Element(_, e1, e2)
         | Expr::Concat(_, e1, e2) => {
             concretise_expr(e1)?;
             concretise_expr(e2)

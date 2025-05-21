@@ -55,12 +55,6 @@ pub fn flatten(program: TypedProgram) -> Program {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Label(u64);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Ident {
-    Global(Global),
-    Stack(StackOffset),
-    Reg(Temp),
-}
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Temp(usize);
 impl Temp {
     pub const ZERO: Self = Temp(0);
@@ -78,24 +72,15 @@ impl Global {
         self.0
     }
 }
-impl From<Global> for Ident {
-    fn from(g: Global) -> Self {
-        Ident::Global(g)
-    }
-}
-impl From<Temp> for Ident {
-    fn from(t: Temp) -> Self {
-        Ident::Reg(t)
-    }
-}
-impl From<StackOffset> for Ident {
-    fn from(so: StackOffset) -> Self {
-        Ident::Stack(so)
-    }
-}
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct StackOffset(usize);
-impl StackOffset {
+/// A variable that represents a statically known offset and size
+/// in the stack. They are acquired with the StackAlloc built-in and have to be released
+/// again in reverse order of when they are acquired with the built-in StackFree.
+///
+/// BEWARE: Only the most recently acquired StackVar can be freed and only once, freeing any other is an error
+/// and codegen will assume this is upheld. Violating it will either lead to an error or in the worst case, lead to undefined behaviour.
+pub struct StackVar(usize);
+impl StackVar {
     #[inline(always)]
     pub fn inner(&self) -> usize {
         self.0
@@ -119,6 +104,27 @@ pub enum FlatType {
     FnPtr(Box<[Self]>, Box<Self>),
     Arr(Box<Self>, u16),
     Struct(Box<[Self]>),
+}
+
+impl FlatType {
+    pub fn bptr(t: Box<Self>) -> Self {
+        Self::Ptr(Some(t))
+    }
+    pub fn ptr(t: Self) -> Self {
+        Self::bptr(Box::new(t))
+    }
+    pub fn mslice(t: Option<Self>) -> Self {
+        FlatType::Struct(Box::new([
+            FlatType::Ptr(t.map(Box::new)),
+            FlatType::U16,
+        ]))
+    }
+    pub fn slice(t: Self) -> Self {
+        FlatType::Struct(Box::new([
+            FlatType::ptr(t),
+            FlatType::U16,
+        ]))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -151,20 +157,22 @@ pub enum Line {
     SetTo(Temp, FlatType, Temp),
     SetBinop(Temp, FlatType, Binop, Temp, Temp),
     SetUnop(Temp, FlatType, Unop, Temp),
-    SetCall(Temp, FlatType, Ident, Box<[Temp]>),
-    SetAddrOf(Temp, FlatType, Ident),
-    // /// set temp to slice of type with addr of operand1 and length of operand2
-    // SetSliceOf(Temp, FlatType, Temp, Temp),
+    SetCall(Temp, FlatType, Global, Box<[Temp]>),
+    SetCallTemp(Temp, FlatType, Temp, Box<[Temp]>),
+    SetAddrOfStackVar(Temp, FlatType, StackVar),
+    SetAddrOfGlobal(Temp, FlatType, Global),
+    SetStruct(Temp, FlatType, Box<[Temp]>),
+    SetFieldOfTemp(Temp, FlatType, Temp, u16),
 
     /// allocate space on stack for a (statically sized) type
     /// the offset will be represented symbolically by the `StackOffset`
-    StackAlloc(StackOffset, FlatType),
+    StackAlloc(StackVar, FlatType),
     /// read a stack-allocated value from the stack into a register
-    StackRead(Temp, FlatType, StackOffset, Temp),
+    StackRead(Temp, FlatType, StackVar, Temp),
     /// write a value into the stack
-    StackWrite(StackOffset, Temp, Temp),
+    StackWrite(StackVar, Temp, Temp),
     /// free a stack offset (these have to happen in reverse order from their allocation)
-    StackFree(StackOffset),
+    StackFree(StackVar),
 
     /// first `Temp` must contain a pointer
     /// second an offset, where `Temp(0)` represents no offset
@@ -183,6 +191,20 @@ pub enum Line {
     Ret(Temp),
 
     Panic(Box<str>),
+}
+impl Line {
+    #[allow(non_snake_case)]
+    pub const fn SetSliceLen(dest: Temp, slice: Temp) -> Self {
+        Self::SetFieldOfTemp(dest, FlatType::U16, slice, 1)
+    }
+    #[allow(non_snake_case)]
+    pub fn SetSlicePtr(dest: Temp, element_type: FlatType, slice: Temp) -> Self {
+        Self::SetFieldOfTemp(dest, FlatType::ptr(element_type), slice, 0)
+    }
+    #[allow(non_snake_case)]
+    pub fn SetSlice(dest: Temp, element_type: FlatType, ptr: Temp, len: Temp) -> Self {
+        Line::SetStruct(dest, FlatType::slice(element_type), Box::new([ptr, len]))
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

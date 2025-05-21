@@ -1,6 +1,29 @@
 use std::collections::HashMap;
 
-use crate::flat::{Binop, Const, Ident, Line, Program, StaticDecl, Temp, Unop};
+use crate::flat::{Binop, Const, Global, Line, Program, StackVar, StaticDecl, Temp, Unop};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum Ident {
+    Global(Global),
+    Stack(StackVar),
+    Reg(Temp),
+}
+impl From<Global> for Ident {
+    fn from(g: Global) -> Self {
+        Ident::Global(g)
+    }
+}
+impl From<Temp> for Ident {
+    fn from(t: Temp) -> Self {
+        Ident::Reg(t)
+    }
+}
+impl From<StackVar> for Ident {
+    fn from(so: StackVar) -> Self {
+        Ident::Stack(so)
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Value {
     Const(Const),
@@ -24,7 +47,7 @@ impl Symtab {
     }
 }
 
-// TODO: either remove units or set them to `$0`
+// TODO: either remove units or set them to `%0`
 
 pub fn const_prop_pass(mut program: Program) -> Program {
     let mut stab = Symtab::default();
@@ -114,7 +137,7 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                         &Value::Const(c) => {
                             let c = apply_unop(*unop, c);
                             stab.set(dest.clone(), Value::Const(c));
-                            *line = Line::SetConst(dest.clone(), ty.clone(), apply_unop(*unop, c));
+                            *line = Line::SetConst(dest.clone(), ty.clone(), c);
                         }
                         Value::Alias(Ident::Reg(t)) => {
                             *s = t.clone();
@@ -123,6 +146,20 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                         _ => stab.set(dest.clone(), Value::RuntimeDependant),
                     }
                 }
+                Line::SetFieldOfTemp(dest, _ty, src, _field) => {
+                    match stab.get(src.clone()) {
+                        // &Value::Const(Const::ConstSlice(_, len)) if *field == 1 => {
+                        //     let c = Const::ConstU16(len);
+                        //     stab.set(dest.clone(), Value::Const(c));
+                        //     *line = Line::SetConst(dest.clone(), ty.clone(), c);
+                        // }
+                        // TODO: fix this
+                        _ => stab.set(dest.clone(), Value::RuntimeDependant),
+                    }
+                }
+                // TODO: structs don't have to be runtime-dependant
+                Line::SetStruct(t, _, _) |
+                Line::SetCallTemp(t, _, _, _) |
                 Line::SetCall(t, _, _, _) => stab.set(t.clone(), Value::RuntimeDependant),
                 Line::StackAlloc(_, _) => todo!(),
                 Line::StackFree(_) => todo!(),
@@ -147,7 +184,8 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                     }
                 }
                 Line::ReadFromAddr(_, _, _, _) => todo!(),
-                Line::SetAddrOf(t, _, _) => stab.set(t.clone(), Value::RuntimeDependant),
+                Line::SetAddrOfGlobal(t, _, _) => stab.set(t.clone(), Value::RuntimeDependant),
+                Line::SetAddrOfStackVar(t, _, _) => stab.set(t.clone(), Value::RuntimeDependant),
                 Line::ReadGlobal(t, ty, g) => {
                     let t = t.clone();
                     match stab.get(g.clone()) {

@@ -2,7 +2,7 @@ use std::fmt::{self, Display};
 
 use crate::ttype::StorageClass;
 
-use super::{Decl, Expr, Index, PlaceExpr, Program, Statement};
+use super::{Decl, Expr, PlaceExpr, Program, SliceEndIndex, Statement};
 
 impl Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -78,22 +78,8 @@ impl Display for PlaceExpr {
         match self {
             Self::Ident(_, i) => write!(f, "{i}"),
             Self::Deref(_, a, t) => write!(f, "*{a} (: {t})"),
-            Self::Index(_, e, t, i) => write!(f, "{e}[{i}] (: {t})"),
+            Self::Element(_, e, t, i) => write!(f, "{e}[{i}] (: {t})"),
             Self::FieldAccess(_, e, i) => write!(f, "{e}.{i}"),
-        }
-    }
-}
-
-impl Display for Index {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Index::Full => write!(f, ".."),
-            Index::Index(i) => write!(f, "{i}"),
-            Index::RangeFrom(from) => write!(f, "{from}.."),
-            Index::RangeToExcl(to) => write!(f, "..<{to}"),
-            Index::RangeToIncl(to) => write!(f, "..={to}"),
-            Index::RangeExcl(from, to) => write!(f, "{from}..{to}"),
-            Index::RangeIncl(from, to) => write!(f, "{from}..{to}"),
         }
     }
 }
@@ -158,7 +144,14 @@ impl Display for Expr {
             },
             Expr::Neg(_, a) => write!(f, "-{a}"),
             Expr::FieldAccess(_, sl, field) => write!(f, "{sl}.{field}"),
-            Expr::Index(_, a, i) => write!(f, "{a}[{i}]"),
+            Expr::Element(_, s, i) => write!(f, "{s}[{i}]"),
+            Expr::SliceOfArray(_, a) => match a {
+                Ok(e) => write!(f, "@slice({e})"),
+                Err(e) => write!(f, "@slice({e})"),
+            },
+            Expr::Slice(_, a, from, SliceEndIndex::Incl(to)) => write!(f, "{a}[{from}:={to}]"),
+            Expr::Slice(_, a, from, SliceEndIndex::Excl(to)) => write!(f, "{a}[{from}:<{to}]"),
+            Expr::Slice(_, a, from, SliceEndIndex::Open) => write!(f, "{a}[{from}:]"),
             Expr::Deref(_, a) => write!(f, "*{a}"),
             Expr::Array(_, t, es) => {
                 write!(f, "[")?;

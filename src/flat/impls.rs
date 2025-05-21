@@ -6,7 +6,7 @@ use std::{
 use crate::ttype::Type;
 
 use super::{
-    flat_codegen::flatten_type, Binop, Const, FlatType, Function, Global, Ident, Label, Line, Program, StackOffset, StaticDecl, Temp, Unop
+    flat_codegen::flatten_type, Binop, Const, FlatType, Function, Global, Label, Line, Program, StackVar, StaticDecl, Temp, Unop
 };
 
 impl Function {
@@ -46,14 +46,8 @@ pub struct DisplayTemp<'a> {
     inner: &'a Temp,
     locals: &'a [Box<str>],
 }
-#[derive(Clone, Copy)]
-pub struct DisplayIdent<'a> {
-    inner: &'a Ident,
-    locals: &'a [Box<str>],
-    stacks: &'a [Box<str>],
-}
 pub struct DisplayStackOffset<'a> {
-    inner: &'a StackOffset,
+    inner: &'a StackVar,
     stacks: &'a [Box<str>],
 }
 impl Temp {
@@ -69,21 +63,7 @@ impl Temp {
         }
     }
 }
-impl Ident {
-    #[inline]
-    pub fn display(&self) -> DisplayIdent<'_> {
-        self.display_with(&[], &[])
-    }
-    #[inline]
-    pub fn display_with<'a>(&'a self, locals: &'a [Box<str>], stacks: &'a [Box<str>]) -> DisplayIdent<'a> {
-        DisplayIdent {
-            inner: self,
-            locals,
-            stacks,
-        }
-    }
-}
-impl StackOffset {
+impl StackVar {
     #[inline]
     pub fn display(&self) -> DisplayStackOffset<'_> {
         self.display_with(&[])
@@ -102,15 +82,6 @@ impl Display for DisplayTemp<'_> {
             write!(f, "%{}{name}", self.inner.0)
         } else {
             write!(f, "%{}", self.inner.0)
-        }
-    }
-}
-impl Display for DisplayIdent<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.inner {
-            Ident::Reg(t) => write!(f, "{}", t.display_with(self.locals)),
-            Ident::Stack(so) => write!(f, "{}", so.display_with(self.stacks)),
-            Ident::Global(g) => write!(f, "{g}"),
         }
     }
 }
@@ -254,18 +225,57 @@ impl Display for DisplayLine<'_> {
                 dest.display_with(locals),
                 op1.display_with(locals)
             ),
-            Line::SetAddrOf(dest, t, src) => write!(
+            Line::SetAddrOfGlobal(dest, t, src) => write!(
+                f,
+                "{} = {t} &{src}",
+                dest.display_with(locals),
+            ),
+            Line::SetAddrOfStackVar(dest, t, src) => write!(
                 f,
                 "{} = {t} &{}",
                 dest.display_with(locals),
-                src.display_with(locals, stacks)
+                src.display_with(stacks)
             ),
+            Line::SetFieldOfTemp(dest, t, src, field) => write!(
+                f,
+                "{} = {t} {}.{field}",
+                dest.display_with(locals),
+                src.display_with(locals),
+            ),
+            Line::SetStruct(dest, t, fields) => {
+                write!(f, "{} = {t} {{", dest.display_with(locals))?;
+                let mut first = true;
+                for field in &**fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{}", field.display_with(locals))?;
+                }
+                write!(f, "}}")
+            }
             Line::SetCall(dest, t, name, args) => {
+                write!(
+                    f,
+                    "{} = {t} {name}(",
+                    dest.display_with(locals),
+                )?;
+                let mut first = true;
+                for arg in &**args {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{}", arg.display_with(locals))?;
+                }
+                write!(f, ")")
+            }
+            Line::SetCallTemp(dest, t, name, args) => {
                 write!(
                     f,
                     "{} = {t} {}(",
                     dest.display_with(locals),
-                    name.display_with(locals, stacks)
+                    name.display_with(locals)
                 )?;
                 let mut first = true;
                 for arg in &**args {

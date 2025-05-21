@@ -5,7 +5,7 @@ use collect_result::CollectResult;
 use self::concrete::{concretise_expr, concretise_type};
 
 use super::{
-    ast::{Decl, Expr, Index, PlaceExpr, Program, Statement}, stab::SymbolTable, unify_types, Result, StorageClass::{self, *}, Type, TypeErrorType
+    ast::{Decl, Expr, PlaceExpr, Program, SliceEndIndex, Statement}, stab::SymbolTable, unify_types, Result, StorageClass::{self, *}, Type, TypeErrorType
 };
 use crate::parse::{
     ast::{
@@ -168,21 +168,15 @@ fn check_statements(
                     e,
                 ));
             }
-            UntypedStatement::Assign(loc, UntypedPle::Index(loc2, arr_e, ind_e), e) => {
-                let (arr_t, arr_e) = check_expr(&arr_e, state)?;
-                let ind_e = check_expr_as(&ind_e, state, &Type::U16)?;
+            UntypedStatement::Assign(loc, UntypedPle::Index(loc2, indexable, index), e) => {
+                let (slice, inner_t) = check_indexable_expr(&indexable, state)?;
+                let index = check_expr_as(&index, state, &Type::U16)?;
 
-                let inner_t = match &arr_t {
-                    Type::Array(t, _) => t.clone(),
-                    Type::ArrayPointer(t) => t.clone(),
-                    Type::Slice(t) => t.clone(),
-                    t => return Err(TypeErrorType::NotIndexable(t.clone()).location(loc)),
-                };
                 let e = check_expr_as(&e, state, &inner_t)?;
 
                 stmnts.push(Statement::Assign(
                     loc,
-                    PlaceExpr::Index(loc2, Box::new(arr_e), inner_t, Box::new(ind_e)),
+                    PlaceExpr::Element(loc2, Box::new(slice), inner_t, Box::new(index)),
                     e,
                 ));
             }
@@ -426,52 +420,44 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             };
             Ok((field_t, Expr::FieldAccess(loc.clone(), Box::new(e), field.clone())))
         },
-        UntypedExpr::Index(loc, arr, index) => {
-            let (arr_t, arr_e) = check_expr(arr, state)?;
-            let mut making_slice = true;
-            let ind = match index {
-                UntypedIndex::Full => Index::Full,
+        UntypedExpr::Index(loc, indexable, index) => {
+            let (slice, inner_t) = check_indexable_expr(indexable, state)?;
+
+            let (start, end) = match index {
+                // TODO: acquire correct index location
                 UntypedIndex::Index(i) => {
-                    making_slice = false;
-                    Index::Index(
-                        Box::new(check_expr_as(&i, state, &Type::U16)?)
-                    )
+                    let index = Box::new(check_expr_as(&i, state, &Type::U16)?);
+                    return Ok((*inner_t, Expr::Element(loc.clone(), Box::new(slice), index)));
                 }
-                UntypedIndex::RangeFrom(f) => Index::RangeFrom(
-                    Box::new(check_expr_as(&f, state, &Type::U16)?)
+                UntypedIndex::Full => (Expr::ConstU16(loc.clone(), 0), SliceEndIndex::Open),
+                UntypedIndex::RangeFrom(f) => (
+                    check_expr_as(&f, state, &Type::U16)?,
+                    SliceEndIndex::Open,
                 ),
-                UntypedIndex::RangeToExcl(t) => Index::RangeToExcl(
-                    Box::new(check_expr_as(&t, state, &Type::U16)?)
+                UntypedIndex::RangeToExcl(t) => (
+                    Expr::ConstU16(loc.clone(), 0),
+                    SliceEndIndex::Excl(check_expr_as(&t, state, &Type::U16)?),
                 ),
-                UntypedIndex::RangeToIncl(t) => Index::RangeToIncl(
-                    Box::new(check_expr_as(&t, state, &Type::U16)?)
+                UntypedIndex::RangeToIncl(t) => (
+                    Expr::ConstU16(loc.clone(), 0),
+                    SliceEndIndex::Incl(check_expr_as(&t, state, &Type::U16)?),
                 ),
-                UntypedIndex::RangeExcl(f, t) => Index::RangeExcl(
-                    Box::new(check_expr_as(&f, state, &Type::U16)?),
-                    Box::new(check_expr_as(&t, state, &Type::U16)?),
+                UntypedIndex::RangeExcl(f, t) => (
+                    check_expr_as(&f, state, &Type::U16)?,
+                    SliceEndIndex::Excl(check_expr_as(&t, state, &Type::U16)?),
                 ),
-                UntypedIndex::RangeIncl(f, t) => Index::RangeIncl(
-                    Box::new(check_expr_as(&f, state, &Type::U16)?),
-                    Box::new(check_expr_as(&t, state, &Type::U16)?),
+                UntypedIndex::RangeIncl(f, t) => (
+                    check_expr_as(&f, state, &Type::U16)?,
+                    SliceEndIndex::Incl(check_expr_as(&t, state, &Type::U16)?),
                 ),
             };
 
-            let inner_t = match &arr_t {
-                Type::Array(t, _) => t.clone(),
-                Type::ArrayPointer(t) => t.clone(),
-                Type::Slice(t) => t.clone(),
-                t => return Err(TypeErrorType::NotIndexable(t.clone()).location(loc.clone())),
-            };
-
-            let t = if making_slice {
-                Type::Slice(inner_t)
-            } else {
-                *inner_t
-            };
+            let slice = Box::new(slice);
+            let start = Box::new(start);
 
             Ok((
-                t,
-                Expr::Index(loc.clone(), Box::new(arr_e), Box::new(ind)),
+                Type::Slice(inner_t),
+                Expr::Slice(loc.clone(), slice, start, end.map(Box::new)),
             ))
         }
         UntypedExpr::Call(loc, name, args) => {
@@ -569,6 +555,26 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
     }
 }
 
+/// Returns a slice expression and the type if its element in a box
+fn check_indexable_expr(indexable: &UntypedExpr, state: &SymbolTable) -> Result<(Expr, Box<Type>)> {
+    let (indexable_t, indexable) = check_expr(indexable, state)?;
+
+    let (slice, inner_t) = match indexable_t {
+        Type::Array(element_t, _) => (Expr::SliceOfArray(indexable.location(), match indexable {
+            Expr::FieldAccess(loc, e, f) => Ok(PlaceExpr::FieldAccess(loc, e, f)),
+            Expr::Ident(loc, id) => Ok(PlaceExpr::Ident(loc, id)),
+            Expr::Deref(loc, e) => Ok(PlaceExpr::Deref(loc, e, element_t.clone())),
+            Expr::Element(loc, slice, index) => Ok(PlaceExpr::Element(loc, slice, element_t.clone(), index)),
+            e => Err(Box::new(e)),
+        }), element_t),
+        Type::ArrayPointer(_element_t) => todo!(),
+        Type::Slice(element_t) => (indexable, element_t),
+        t => return Err(TypeErrorType::NotIndexable(t.clone()).location(indexable.location())),
+    };
+    
+    Ok((slice, inner_t))
+}
+
 fn check_pl_expr(pl: &UntypedPle, state: &SymbolTable) -> Result<(Type, PlaceExpr)> {
     match pl {
         UntypedPle::Ident(loc, i) => {
@@ -591,3 +597,4 @@ fn check_pl_expr(pl: &UntypedPle, state: &SymbolTable) -> Result<(Type, PlaceExp
         UntypedPle::FieldAccess(_, _, _) => todo!(),
     }
 }
+

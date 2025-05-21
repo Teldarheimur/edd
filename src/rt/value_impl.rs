@@ -28,7 +28,18 @@ impl Display for Value {
             }
             Value::BuiltinFn(func) => write!(f, "fn({func:p})"),
             Value::Ref(addr) => write!(f, "&{addr}"),
-            Value::Slice(addr, n) => write!(f, "&{addr}[:<{n}]"),
+            Value::Struct(fields) => {
+                write!(f, "{{")?;
+                let mut first = true;
+                for field in &**fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{field}")?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -44,6 +55,8 @@ impl Add for Value {
             (Value::I32(i1), Value::I32(i2)) => Value::I32(i1.wrapping_add(i2)),
             (Value::U32(i1), Value::U32(i2)) => Value::U32(i1.wrapping_add(i2)),
             (Value::Float(f1), Value::Float(f2)) => Value::Float(f1 + f2),
+            // TODO: maybe remove this? do pointer offsetting in some other way (with a built-in?)
+            (Value::Ref(addr), Value::U16(offset)) => Value::Ref(addr + offset),
             (a, b) => unreachable!("tried to add {a} and {b}"),
         }
     }
