@@ -4,7 +4,7 @@ use crate::{regalloc::{CallingConvention, Ins, Register}, telda::{Br, Wr}};
 
 use super::{Ins as TeldaIns, Reg::{self, *}, Wi, Wr::*, Br::*};
 
-pub const CONV: CallingConvention<Reg, 5, 5> = CallingConvention {
+pub const CONV: CallingConvention<Reg, 5, 5, 1, 4> = CallingConvention {
     caller_save: [
         WideReg(R1),
         WideReg(R6),
@@ -19,6 +19,15 @@ pub const CONV: CallingConvention<Reg, 5, 5> = CallingConvention {
         WideReg(R5),
         WideReg(R10),
     ],
+    arguments: [
+        WideReg(R6),
+        WideReg(R7),
+        WideReg(R8),
+        WideReg(R9),
+    ],
+    return_values: [
+        WideReg(R1),
+    ]
 };
 
 impl Register<usize, Reg> for Reg {
@@ -53,7 +62,7 @@ impl Register<usize, Reg> for Reg {
     }
 }
 
-impl Ins<Reg, Rc<str>> for TeldaIns {
+impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
     fn following_labels(&self) -> Vec<Option<&Rc<str>>> {
         match self {
             TeldaIns::Ret(_) => vec![],
@@ -90,7 +99,7 @@ impl Ins<Reg, Rc<str>> for TeldaIns {
         }
     }
 
-    fn get_gen(&self) -> Vec<Reg> {
+    fn get_gen<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(&self, conv: &CallingConvention<Reg, CRSL, CESL, RET, ARG>) -> Vec<Reg> {
         match *self {
             TeldaIns::Null |
             TeldaIns::Label(_) |
@@ -109,8 +118,9 @@ impl Ins<Reg, Rc<str>> for TeldaIns {
             TeldaIns::PushW(r) => vec![WideReg(r)],
             TeldaIns::PopB(_) => vec![],
             TeldaIns::PopW(_) => vec![],
-            TeldaIns::Call(_) => vec![WideReg(R1), WideReg(R6), WideReg(R7), WideReg(R8), WideReg(R9)],
-            TeldaIns::Ret(_) => vec![WideReg(R1)],
+            // TODO: check if this is right
+            TeldaIns::Call(_) => conv.caller_save.to_vec(),
+            TeldaIns::Ret(_) => conv.return_values.to_vec(),
             TeldaIns::StoreBI(r1, _, r2) => vec![WideReg(r1), ByteReg(r2)],
             TeldaIns::StoreWI(r1, _, r2) => vec![WideReg(r1), WideReg(r2)],
             TeldaIns::StoreBR(r1, r2, r3) => vec![WideReg(r1), WideReg(r2), ByteReg(r3)],
@@ -158,7 +168,7 @@ impl Ins<Reg, Rc<str>> for TeldaIns {
         }
     }
 
-    fn get_kill(&self) -> Vec<Reg> {
+    fn get_kill<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(&self, conv: &CallingConvention<Reg, CRSL, CESL, RET, ARG>) -> Vec<Reg> {
         match *self {
             TeldaIns::Null |
             TeldaIns::Label(_) |
@@ -178,7 +188,7 @@ impl Ins<Reg, Rc<str>> for TeldaIns {
             TeldaIns::PopB(r) => vec![ByteReg(r)],
             TeldaIns::PopW(r) => vec![WideReg(r)],
             // non-unit functions return a value in `R1` or!! on the stack
-            TeldaIns::Call(_) => vec![WideReg(R1)],
+            TeldaIns::Call(_) => conv.caller_save.to_vec(),
             TeldaIns::Ret(_) => vec![],
             TeldaIns::StoreBI(_, _, _) => vec![],
             TeldaIns::StoreWI(_, _, _) => vec![],
@@ -288,6 +298,7 @@ impl Ins<Reg, Rc<str>> for TeldaIns {
             TeldaIns::String(_) |
             TeldaIns::Ref(_) |
             TeldaIns::Global(_) |
+            // TODO: fix this
             TeldaIns::FunctionStartMarker |
             TeldaIns::FunctionEndMarker |
             TeldaIns::StaticMarker |
@@ -444,6 +455,7 @@ impl Ins<Reg, Rc<str>> for TeldaIns {
             TeldaIns::String(_) |
             TeldaIns::Ref(_) |
             TeldaIns::Global(_) |
+            // TODO: fix this
             TeldaIns::FunctionStartMarker |
             TeldaIns::FunctionEndMarker |
             TeldaIns::StaticMarker |

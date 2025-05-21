@@ -40,14 +40,18 @@ fn apply_register_allocation(code: &mut Vec<Ins>) {
     let mut start = 0;
     while start < code.len() {
         // Find next function start
-        if !matches!(code[start], Ins::FunctionStartMarker) {
+        let function_start_here = matches!(code[start], Ins::FunctionStartMarker);
             start += 1;
+
+        if !function_start_here {
             continue;
         }
-        let fn_len = code[start..].iter().position(|l| matches!(l, Ins::FunctionEndMarker)).unwrap();
-        let end = start + fn_len + 1;
 
-        register_allocate(VecView::new(code, start+2, end-1), &impl_regalloc::CONV);
+        let fn_len = code[start..].iter().position(|l| matches!(l, Ins::FunctionEndMarker)).unwrap();
+        let end = start + fn_len;
+
+        let body = VecView::new(code, start, end);
+        register_allocate(body, &impl_regalloc::CONV);
 
         start = end;
     }

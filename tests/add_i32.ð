@@ -1,3 +1,18 @@
+extern fn blackbox(n: i32) unit;
+extern fn nothing() unit;
+
+fn empty() unit {
+    {}
+}
+
+export
 fn add(a: i32, b: i32) i32 {
     a + b
+}
+
+export
+fn sample() unit {
+    let a: i32 = 4;
+    let b: i32 = 5;
+    blackbox(a + b);
 }

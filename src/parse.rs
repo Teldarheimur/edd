@@ -386,6 +386,17 @@ impl EddParser {
             e => unreachable!("{e:?}"),
         }
     }
+    /// Returns whether to export, this will probably change later
+    fn parse_decorator(ps: Pairs<Rule>) -> bool {
+        let mut export = false;
+        for p in ps {
+            match p.as_rule() {
+                Rule::export => export = true,
+                _ => unreachable!("{p}"),
+            }
+        }
+        export
+    }
     fn parse_program(mut ps: Pairs<Rule>, sf: &Rc<Path>) -> Result<Program> {
         let mut decls = Vec::new();
         loop {
@@ -410,6 +421,7 @@ impl EddParser {
                 Rule::fn_decl => {
                     let loc = Location::from_span(sf, p.as_span());
                     let mut ps = p.into_inner();
+                    let export = Self::parse_decorator(ps.next().unwrap().into_inner());
                     let n = ps.next().unwrap().as_str().into();
                     let typed_idents = ps
                         .next()
@@ -421,7 +433,11 @@ impl EddParser {
                     let ret = Self::parse_type(ps.next().unwrap().into_inner()).unwrap();
                     let body = Self::parse_expr(Pairs::single(ps.next().unwrap()), sf);
 
-                    decls.push((n, Decl::Fn(loc, typed_idents, Box::new((ret, body)))));
+                    if export {
+                        decls.push((n, Decl::ExportFn(loc, typed_idents, Box::new((ret, body)))));
+                    } else {
+                        decls.push((n, Decl::LocalFn(loc, typed_idents, Box::new((ret, body)))));
+                    }
                 }
                 Rule::extern_fn_decl => {
                     let loc = Location::from_span(sf, p.as_span());

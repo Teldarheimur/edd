@@ -26,7 +26,8 @@ fn check_program(Prgm(decls): Prgm) -> Result<Program> {
         let (mutable, loc, t) = match decl {
             UntypedDecl::Const(loc, b) => (false, loc, b.0.clone()),
             UntypedDecl::Static(loc, b) => (true, loc, b.0.clone()),
-            UntypedDecl::Fn(loc, args, b) => (
+            UntypedDecl::LocalFn(loc, args, b) |
+            UntypedDecl::ExportFn(loc, args, b) => (
                 false,
                 loc,
                 Type::Function(
@@ -66,7 +67,7 @@ fn check_program(Prgm(decls): Prgm) -> Result<Program> {
                 let t = stab.specify(&loc, &name, &t)?;
                 new_decls.push((name, Decl::Const(loc, Box::new((t, e)))));
             }
-            UntypedDecl::Fn(loc, args, b) => {
+            UntypedDecl::LocalFn(loc, args, b) => {
                 let (t, e) = {
                     let mut stab = stab.clone();
                     for (arg, arg_t) in &*args {
@@ -79,7 +80,22 @@ fn check_program(Prgm(decls): Prgm) -> Result<Program> {
 
                     (t, e)
                 };
-                new_decls.push((name, Decl::Fn(loc, args, Box::new((t, e)))));
+                new_decls.push((name, Decl::LocalFn(loc, args, Box::new((t, e)))));
+            }
+            UntypedDecl::ExportFn(loc, args, b) => {
+                let (t, e) = {
+                    let mut stab = stab.clone();
+                    for (arg, arg_t) in &*args {
+                        stab.add(false, StorageClass::new_rc_cell_with(Static), arg.clone(), arg_t.clone());
+                    }
+
+                    let (et, e) = *b;
+                    let (at, e) = check_expr(&e, &stab)?;
+                    let t = unify_types(&loc, &et, &at)?;
+
+                    (t, e)
+                };
+                new_decls.push((name, Decl::ExportFn(loc, args, Box::new((t, e)))));
             }
             UntypedDecl::ExternFn(loc, args, ret) => {
                 new_decls.push((name, Decl::ExternFn(loc, args, ret)))
@@ -98,7 +114,8 @@ fn check_program(Prgm(decls): Prgm) -> Result<Program> {
                 concretise_type(loc.clone(), &mut b.0)?;
                 concretise_expr(&mut b.1)?;
             }
-            Decl::Fn(loc, a, b) => {
+            Decl::ExportFn(loc, a, b) |
+            Decl::LocalFn(loc, a, b) => {
                 for (_, t) in &mut **a {
                     concretise_type(loc.clone(), t)?;
                 }

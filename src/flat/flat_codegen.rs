@@ -374,7 +374,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
         }
         Expr::Lambda(_, args, ret, body) => {
             let lambda_g = state.new_global("lambda");
-            let f = Function::init(args, ret);
+            let f = Function::init(args, ret, false);
             state.fns.insert(lambda_g.clone(), f);
             flatten_function(lambda_g.clone(), *body, state.statics, state.fns);
             state.add_code(Line::ReadGlobal(place, t, lambda_g));

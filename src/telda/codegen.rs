@@ -62,6 +62,16 @@ impl<'a> FunctionState<'a> {
         self.pseudo_counter += 1;
         Rpw(self.pseudo_counter)
     }
+    /// Makes sure that the temporary is bound to exactly zero registers, representing a zero-sized type
+    fn get_nothing(&mut self, temp: &Temp) {
+        if let Some(list) = self.temps.get(temp) {
+            match &**list {
+                &[] => return,
+                _ => unreachable!(),
+            }
+        }
+        self.temps.insert(temp.clone(), Box::new([]));
+    }
     fn get_byte(&mut self, temp: &Temp) -> Br {
         if let Some(list) = self.temps.get(temp) {
             match &**list {
@@ -128,6 +138,8 @@ impl<'a> FunctionState<'a> {
             }
         }
     }
+    /// Retrieves registers bound to given temporary.
+    /// If none are bound, the given type will be used to make a binding
     fn get<'b, 'c>(&'b mut self, temp: &'c Temp, t: Option<&'c FlatType>) -> &'b [Reg] {
         if !self.temps.contains_key(temp) {
             let Some(t) = t else {
@@ -175,9 +187,10 @@ pub fn generate_program(program: Program) -> Vec<Ins> {
 
     // generate call_reg symbol
     if let Some(call_reg) = call_reg_symbol {
-        code.push(Ins::FunctionStartMarker);
         code.push(Ins::Label(call_reg));
+        code.push(Ins::FunctionStartMarker);
         code.push(Ins::JmpR(Wr::Rf));
+        code.push(Ins::FunctionEndMarker);
     }
 
     code
@@ -241,8 +254,7 @@ const fn const_16(t: Wr, n: u16) -> Ins {
 }
 
 fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: Function) {
-    if &**name.inner() == "main" {
-        // FIXME: hard-coded export of `main`
+    if f.export {
         code.push(Ins::Global(name.inner().clone()));
     }
     code.push(Ins::FunctionStartMarker);
@@ -275,8 +287,10 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 Const::ConstZero => {
                     // make sure the temporary exists in the database
                     match ty {
-                        // cheap!
-                        FlatType::Unit => (),
+                        FlatType::Unit => {
+                            // Make sure the temporary is known and gets bound to an empty list of registers
+                            state.get_nothing(&t);
+                        }
                         FlatType::U8 | FlatType::I8 => {
                             code.push(Ins::MoveB(state.get_byte(&t), R0b));
                         }
@@ -525,14 +539,14 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
             }
             Line::Ret(rets) => {
                 let mut ret_reg = Some(R1);
-                for ret_dest in state.get(&rets, None).iter().rev() {
-                    match (*ret_dest, ret_reg.take()) {
-                        (Reg::WideReg(wr), Some(ret_reg)) => code.push(Ins::MoveW(ret_reg, wr)),
-                        (Reg::WideReg(wr), None) => code.push(Ins::PushW(wr)),
-                        (Reg::ByteReg(br), Some(ret_reg)) => {
+                for ret_src in state.get(&rets, None).iter().rev() {
+                    match (ret_reg.take(), *ret_src) {
+                        (Some(ret_reg), Reg::WideReg(wr)) => code.push(Ins::MoveW(ret_reg, wr)),
+                        (None, Reg::WideReg(wr)) => code.push(Ins::PushW(wr)),
+                        (Some(ret_reg), Reg::ByteReg(br)) => {
                             code.push(Ins::MoveB(Br::try_from_wr(ret_reg).unwrap(), br))
                         }
-                        (Reg::ByteReg(br), None) => code.push(Ins::PushB(br)),
+                        (None, Reg::ByteReg(br)) => code.push(Ins::PushB(br)),
                     }
                 }
                 // TODO: put the right value here to clean up objects stored in stack-space

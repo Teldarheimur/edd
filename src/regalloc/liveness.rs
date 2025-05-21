@@ -3,19 +3,22 @@ use std::hash::Hash;
 
 use crate::small_set::SmallSet;
 
-use super::Ins;
+use super::{CallingConvention, Ins};
 
 pub type Kill<R> = Vec<SmallSet<R>>;
 pub type In<R> = Vec<SmallSet<R>>;
 pub type Out<R> = Vec<SmallSet<R>>;
 
-pub fn analysis<L: Hash + Eq + Clone, R: Eq + Clone, I: Ins<R, L>>(lines: &[I]) -> (Kill<R>, In<R>, Out<R>) {
+pub fn analysis<L: Hash + Eq + Clone, P, R: Eq + Clone, I: Ins<R, P, L>, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
+    lines: &[I],
+    conv: &CallingConvention<P, CRSL, CESL, RET, ARG>,
+) -> (Kill<R>, In<R>, Out<R>) {
     let len = lines.len();
 
     let mut in_set = vec![SmallSet::new(); len];
     let mut out_set = vec![SmallSet::new(); len];
-    let kill_sets: Kill<R> = lines.iter().map(|line| SmallSet::from_iter(line.get_kill())).collect();
-    let gen_sets: Vec<_> = lines.iter().map(|line| line.get_gen()).collect();
+    let kill_sets: Kill<R> = lines.iter().map(|line| SmallSet::from_iter(line.get_kill(conv))).collect();
+    let gen_sets: Vec<_> = lines.iter().map(|line| line.get_gen(conv)).collect();
 
     let succ_sets: Vec<_> = {
         let mut label_table = HashMap::new();

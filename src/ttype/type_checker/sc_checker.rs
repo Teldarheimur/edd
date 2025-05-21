@@ -9,7 +9,8 @@ pub fn check(mut program: Program) -> Result<Program> {
         match decl {
             Decl::Static(_, e) => check_expr(&mut e.1),
             Decl::Const(_, e) => check_expr(&mut e.1),
-            Decl::Fn(_, _, e) => check_expr(&mut e.1),
+            Decl::LocalFn(_, _, e) => check_expr(&mut e.1),
+            Decl::ExportFn(_, _, e) => check_expr(&mut e.1),
             Decl::ExternStatic(_, _) => (),
             Decl::ExternFn(_, _, _) => (),
         }

@@ -20,9 +20,14 @@ pub fn flatten(program: TypedProgram) -> Program {
     let mut external_symbols = Vec::new();
     for (name, decl) in program.0.into_vec() {
         match decl {
-            Decl::Fn(_, args, b) => {
+            Decl::LocalFn(_, args, b) => {
                 let glbl = Global(name);
-                fns.insert(glbl.clone(), Function::init(args, b.0));
+                fns.insert(glbl.clone(), Function::init(args, b.0, false));
+                fn_exprs.insert(glbl, b.1);
+            }
+            Decl::ExportFn(_, args, b) => {
+                let glbl = Global(name);
+                fns.insert(glbl.clone(), Function::init(args, b.0, true));
                 fn_exprs.insert(glbl, b.1);
             }
             Decl::Const(_, b) | Decl::Static(_, b) => {
@@ -129,6 +134,8 @@ impl FlatType {
 
 #[derive(Debug, Clone)]
 pub struct Function {
+    /// Whether this function should be exported
+    pub export: bool,
     pub arg_types: Box<[FlatType]>,
     pub ret_type: FlatType,
     pub lines: Vec<Line>,

@@ -2,13 +2,13 @@ pub mod liveness;
 pub mod reg_alloc;
 pub mod vec_view;
 
-pub trait Ins<R, L> {
+pub trait Ins<R, P, L> {
     /// None means that the instruction is followed by the next instruction.
     /// Empty array means that the instruction is an endpoint (like return).
     fn following_labels(&self) -> Vec<Option<&L>>;
     fn label(&self) -> Option<&L>;
-    fn get_gen(&self) -> Vec<R>;
-    fn get_kill(&self) -> Vec<R>;
+    fn get_gen<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(&self, calling_convention: &CallingConvention<P, CRSL, CESL, RET, ARG>) -> Vec<R>;
+    fn get_kill<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(&self, calling_convention: &CallingConvention<P, CRSL, CESL, RET, ARG>) -> Vec<R>;
 
     fn is_return(&self) -> bool;
 
@@ -34,34 +34,39 @@ pub trait Register<S, P> {
 
 /// Static information about which registers and stack space is available
 #[derive(Debug, Clone)]
-pub struct CallingConvention<R, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize> {
+pub struct CallingConvention<P, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize, const RETURN_VALUES: usize, const ARGUMENTS: usize> {
     /// Register allocation will prefer to give out these first
-    pub caller_save: [R; CALLER_SAVE_LEN],
-    pub callee_save: [R; CALLEE_SAVE_LEN],
+    pub caller_save: [P; CALLER_SAVE_LEN],
+    pub callee_save: [P; CALLEE_SAVE_LEN],
+
+    /// Should be a subset of caller_save
+    pub return_values: [P; RETURN_VALUES],
+    /// Should be a subset of caller_save
+    pub arguments: [P; ARGUMENTS],
 }
 
-impl<R: Copy, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize> CallingConvention<R, CALLER_SAVE_LEN, CALLEE_SAVE_LEN> {
-    fn allocator(&self) -> AllocatorInstance<R, CALLER_SAVE_LEN, CALLEE_SAVE_LEN> {
+impl<P: Copy, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize> CallingConvention<P, CRSL, CESL, RET, ARG> {
+    fn allocator(&self) -> AllocatorInstance<P, CRSL, CESL, RET, ARG> {
         AllocatorInstance {
             regs_to_allocate: self.caller_save.iter().rev().copied().collect(),
             still_caller_save: true,
-            allocator: self,
+            conv: self,
             stack_offset: 0,
         }
     }
-    const COLOURS_AVAILABLE: usize = CALLER_SAVE_LEN + CALLEE_SAVE_LEN;
+    const COLOURS_AVAILABLE: usize = CRSL + CESL;
 }
 
-struct AllocatorInstance<'a, R, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize> {
-    allocator: &'a CallingConvention<R, CALLER_SAVE_LEN, CALLEE_SAVE_LEN>,
+struct AllocatorInstance<'a, P, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize> {
+    pub conv: &'a CallingConvention<P, CRSL, CESL, RET, ARG>,
     still_caller_save: bool,
-    regs_to_allocate: Vec<R>,
+    regs_to_allocate: Vec<P>,
 
     stack_offset: usize,
 }
 
-impl<R: Copy, const A: usize, const B: usize> AllocatorInstance<'_, R, A, B> {
-    fn next(&mut self) -> Option<R> {
+impl<P: Copy, const A: usize, const B: usize, const C: usize, const D: usize> AllocatorInstance<'_, P, A, B, C, D> {
+    fn next(&mut self) -> Option<P> {
         if let Some(reg) = self.regs_to_allocate.pop() {
             Some(reg)
         } else {
@@ -70,7 +75,7 @@ impl<R: Copy, const A: usize, const B: usize> AllocatorInstance<'_, R, A, B> {
                 return None;
             }
             self.still_caller_save = false;
-            self.regs_to_allocate = self.allocator.callee_save.iter().rev().copied().collect();
+            self.regs_to_allocate = self.conv.callee_save.iter().rev().copied().collect();
             self.next()
         }
     }
@@ -79,18 +84,18 @@ impl<R: Copy, const A: usize, const B: usize> AllocatorInstance<'_, R, A, B> {
         self.stack_offset += 1;
         so
     }
-    fn unalloc_regs(&mut self) -> &mut Self {
-        self.regs_to_allocate = self.allocator.caller_save.iter().rev().copied().collect();
+    fn unallocate_regs(&mut self) -> &mut Self {
+        self.regs_to_allocate = self.conv.caller_save.iter().rev().copied().collect();
         self.still_caller_save = true;
 
         self
     }
-    fn regs_to_save(&self) -> Vec<R> {
+    fn regs_to_save(&self) -> Vec<P> {
         if self.still_caller_save {
             return Vec::new();
         }
 
-        let len = self.allocator.callee_save.len() - self.regs_to_allocate.len();
-        self.allocator.callee_save[..len].to_vec()
+        let len = self.conv.callee_save.len() - self.regs_to_allocate.len();
+        self.conv.callee_save[..len].to_vec()
     }
 }

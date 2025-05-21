@@ -12,7 +12,8 @@ pub struct Program(pub Box<[(Rc<str>, Decl)]>);
 pub enum Decl {
     Static(Location, Box<(Type, Expr)>),
     Const(Location, Box<(Type, Expr)>),
-    Fn(Location, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
+    LocalFn(Location, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
+    ExportFn(Location, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
     ExternStatic(Location, Box<Type>),
     ExternFn(Location, Box<[(Rc<str>, Type)]>, Box<Type>),
 }

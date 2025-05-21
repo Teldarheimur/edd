@@ -13,7 +13,8 @@ pub struct Program(pub Vec<(Rc<str>, Decl)>);
 pub enum Decl {
     Static(Location, Box<(Type, Expr)>),
     Const(Location, Box<(Type, Expr)>),
-    Fn(Location, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
+    LocalFn(Location, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
+    ExportFn(Location, Box<[(Rc<str>, Type)]>, Box<(Type, Expr)>),
     ExternStatic(Location, Box<Type>),
     ExternFn(Location, Box<[(Rc<str>, Type)]>, Box<Type>),
 }
@@ -62,9 +63,22 @@ impl Display for Program {
                     let (t, e) = &**bind;
                     write!(f, "const {name}: {t} = {e}")?;
                 }
-                Decl::Fn(_, args, body) => {
+                Decl::LocalFn(_, args, body) => {
                     let (ret, body) = &**body;
                     write!(f, "fn {name}(")?;
+                    let mut first = true;
+                    for (arg_n, arg_t) in &**args {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        first = false;
+                        write!(f, "{arg_n}: {arg_t}")?;
+                    }
+                    write!(f, ") {ret} {body}")?;
+                }
+                Decl::ExportFn(_, args, body) => {
+                    let (ret, body) = &**body;
+                    write!(f, "export fn {name}(")?;
                     let mut first = true;
                     for (arg_n, arg_t) in &**args {
                         if !first {

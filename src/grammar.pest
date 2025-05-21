@@ -132,9 +132,11 @@ const_decl = {
     "const" ~ typed_ident ~ "=" ~ expr ~ ";"
 }
 fn_decl = {
-    "fn" ~ ident ~ "(" ~ typed_idents ~ ")" ~ return_type
+    decorator ~ "fn" ~ ident ~ "(" ~ typed_idents ~ ")" ~ return_type
     ~ block
 }
+    decorator = { export? }
+        export = { "export" }
 extern_decl = {
     "extern" ~ typed_ident ~ ";"
 }

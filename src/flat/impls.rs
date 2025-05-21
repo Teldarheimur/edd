@@ -10,7 +10,7 @@ use super::{
 };
 
 impl Function {
-    pub fn init(args: Box<[(Rc<str>, Type)]>, ret_type: Type) -> Self {
+    pub fn init(args: Box<[(Rc<str>, Type)]>, ret_type: Type, export: bool) -> Self {
         let mut local_names = vec!["_".into()];
         let arg_types = args
             .into_vec()
@@ -22,6 +22,7 @@ impl Function {
             .collect();
 
         Self {
+            export,
             reg_names: local_names,
             stack_names: Vec::new(), // TODO: fix
             arg_types,
@@ -160,9 +161,13 @@ impl Display for Program {
                 arg_types,
                 stack_names,
                 ret_type,
+                export,
             },
         ) in &self.fns
         {
+            if *export {
+                write!(f, "export ")?;
+            }
             write!(f, "fn {name}(")?;
             let mut first = true;
             for (at, i) in arg_types.iter().zip(1..) {

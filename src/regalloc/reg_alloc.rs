@@ -10,11 +10,11 @@ use super::{
 };
 
 // TODO: handle arguments and returns passed via stack better, so as to not store them twice in the stack
-pub fn register_allocate<L, I, R, S, P, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize>(
+pub fn register_allocate<L, I, R, S, P, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
     mut body: VecView<I>,
-    conv: &CallingConvention<P, CALLER_SAVE_LEN, CALLEE_SAVE_LEN>,
+    conv: &CallingConvention<P, CRSL, CESL, RET, ARG>,
 )
-    where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, I: Ins<R, L>, P: Copy + Eq + Hash, S: Clone + Eq + Hash
+    where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, I: Ins<R, P, L>, P: Copy + Eq + Hash, S: Clone + Eq + Hash
 {
     // let arg_spill = old_args.len().saturating_sub(alloc.args.len());
     // let ret_spill = old_returns.len().saturating_sub(alloc.rets.len());
@@ -42,16 +42,17 @@ pub fn register_allocate<L, I, R, S, P, const CALLER_SAVE_LEN: usize, const CALL
     }
 }
 
-fn register_allocate_inner<L, R, P, I, S, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize>(
+fn register_allocate_inner<L, R, P, I, S, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
     body: &mut VecView<I>,
-    alloc_ins: &mut AllocatorInstance<P, CALLER_SAVE_LEN, CALLEE_SAVE_LEN>,
+    alloc_ins: &mut AllocatorInstance<P, CRSL, CESL, RET, ARG>,
 )
-    where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, P: Copy + Eq + Hash, I: Ins<R, L>, S: Clone + Eq + Hash
+    where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, P: Copy + Eq + Hash, I: Ins<R, P, L>, S: Clone + Eq + Hash
 {
     // Make interference graph
     let mut interference = HashMap::new();
 
-    let (kill, in_, out) = analysis(body);
+    let conv = alloc_ins.conv;
+    let (kill, in_, out) = analysis(body, conv);
 
     for in_set in in_ {
         for var in in_set.iter() {
@@ -74,7 +75,7 @@ fn register_allocate_inner<L, R, P, I, S, const CALLER_SAVE_LEN: usize, const CA
 
     let mut stack = Vec::new();
 
-    let limit = CallingConvention::<P, CALLER_SAVE_LEN, CALLEE_SAVE_LEN>::COLOURS_AVAILABLE;
+    let limit = CallingConvention::<P, CRSL, CESL, RET, ARG>::COLOURS_AVAILABLE;
 
     loop {
         let node = if let Some((node, _)) = interference.iter().find(|(_, with)| with.len() < limit) {
@@ -155,7 +156,7 @@ fn register_allocate_inner<L, R, P, I, S, const CALLER_SAVE_LEN: usize, const CA
         }
     } else {
         spill(body, spilled, alloc_ins);
-        register_allocate_inner(body, alloc_ins.unalloc_regs())
+        register_allocate_inner(body, alloc_ins.unallocate_regs())
     }
 }
 
@@ -169,7 +170,7 @@ fn rename<R: Register<S, P>, S, P: Copy>(from: R, to: R, i: usize) -> R {
     todo!("make new symbolic register combining `from` {from:p} and {i}");
 }
 
-fn rename_instruction<P: Copy + Eq, L, I: Ins<R, L>, R: Register<S, P>, S: Clone + Eq>(ins: &mut I, renames: &[(S, P)]) {
+fn rename_instruction<P: Copy + Eq, L, I: Ins<R, P, L>, R: Register<S, P>, S: Clone + Eq>(ins: &mut I, renames: &[(S, P)]) {
     let do_rename = |r: R| {
         if let Some(&r) = r.as_physical() {
             return r;
@@ -187,7 +188,7 @@ fn rename_instruction<P: Copy + Eq, L, I: Ins<R, L>, R: Register<S, P>, S: Clone
 
 /// Renames registers given in the argument `renames` and returns the
 /// old rewritten register and what it was renamed to
-fn rename_writes<P: Copy + Eq, R: Register<S, P> + Clone + Eq, S, L, I: Ins<R, L>>(ins: &mut I, renames: &[(R, R)], i: usize) -> Vec<(R, R)> {
+fn rename_writes<P: Copy + Eq, R: Register<S, P> + Clone + Eq, S, L, I: Ins<R, P, L>>(ins: &mut I, renames: &[(R, R)], i: usize) -> Vec<(R, R)> {
     let mut renamed = Vec::new();
     let do_rename = |r| {
         if let Some((r, to)) = renames.iter().find(|(rename_r, _)| &r == rename_r).cloned() {
@@ -202,7 +203,7 @@ fn rename_writes<P: Copy + Eq, R: Register<S, P> + Clone + Eq, S, L, I: Ins<R, L
     renamed
 }
 /// Renames registers read from and returns all the registers that were renamed: what it was renamed from and to
-fn rename_reads<P: Copy, R: Register<S, P> + Eq + Clone, S, L, I: Ins<R, L>>(ins: &mut I, renames: &[(R, R)], i: usize) -> Vec<(R, R)> {
+fn rename_reads<P: Copy, R: Register<S, P> + Eq + Clone, S, L, I: Ins<R, P, L>>(ins: &mut I, renames: &[(R, R)], i: usize) -> Vec<(R, R)> {
     let mut renamed = Vec::new();
     let do_rename = |r| {
         if let Some((r, to)) = renames.iter().find(|(rename_r, _)| &r == rename_r).cloned() {
@@ -217,10 +218,10 @@ fn rename_reads<P: Copy, R: Register<S, P> + Eq + Clone, S, L, I: Ins<R, L>>(ins
     renamed
 }
 
-fn spill<P: Copy + Eq, R: Register<S, P> + Eq + Clone, L: Clone, I: Ins<R, L>, S: Hash + Eq + Clone, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize>(
+fn spill<P: Copy + Eq, R: Register<S, P> + Eq + Clone, L: Clone, I: Ins<R, P, L>, S: Hash + Eq + Clone, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
     body: &mut VecView<I>,
     spilled: Vec<R>,
-    alloc_ins: &mut AllocatorInstance<P, CALLER_SAVE_LEN, CALLEE_SAVE_LEN>,
+    alloc_ins: &mut AllocatorInstance<P, CRSL, CESL, RET, ARG>,
 ) {
     // rename register to itself
     let renames: Vec<_> = spilled

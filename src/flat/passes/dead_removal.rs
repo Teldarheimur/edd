@@ -4,9 +4,6 @@ use crate::flat::{Function, Global, Line, Program, StaticDecl, Temp};
 
 #[derive(Debug, Default)]
 struct Symtab {
-    /// Symbols that are exported and thus have to be defined
-    // TODO: collect fns marked to be exported (not yet a feature)
-    exports: Vec<Global>,
     references: HashMap<Global, Vec<Global>>,
 }
 
@@ -28,17 +25,19 @@ pub fn dead_removal_pass(mut program: Program) -> Program {
     mark_statics(&program.statics, &mut symtab);
     mark_fns(&program.fns, &mut symtab);
 
-    // FIXME: artificially exporting main right now
-    symtab.exports.push(Global("main".into()));
+    let exports: Vec<Global> = program.fns
+        .iter()
+        .filter_map(|(glbl, f)| f.export.then(|| glbl.clone()))
+        .collect();
 
-    remove_unused(&mut program, symtab);
+    remove_unused(&mut program, symtab, exports);
 
     program
 }
 
-fn remove_unused(program: &mut Program, mut symtab: Symtab) {
+fn remove_unused(program: &mut Program, symtab: Symtab, exports: Vec<Global>) {
     let mut used = HashSet::new();
-    let mut queue = Vec::from_iter(symtab.exports.drain(..));
+    let mut queue = exports;
     while let Some(export) = queue.pop() {
         if used.contains(&export) {
             continue;
@@ -49,32 +48,16 @@ fn remove_unused(program: &mut Program, mut symtab: Symtab) {
         }
     }
 
-    let mut dead_decls = Vec::new();
-    for (i, decl) in program.statics.iter().enumerate() {
-        match decl {
-            StaticDecl::SetConst(name, _, _) |
-            StaticDecl::SetAlias(name, _, _) |
-            StaticDecl::SetArray(name, _, _) |
-            StaticDecl::SetString(name, _, _) |
-            StaticDecl::SetPtr(name, _, _) |
-            StaticDecl::External(name, _)
-            if !used.contains(name) => dead_decls.push(i),
-            _ => (),
-        }
-    }
-    dead_decls.into_iter().rev().for_each(|i| {
-        program.statics.remove(i);
+    // Remove unused
+    program.statics.retain(|decl| match decl {
+        StaticDecl::SetConst(name, _, _) |
+        StaticDecl::SetAlias(name, _, _) |
+        StaticDecl::SetArray(name, _, _) |
+        StaticDecl::SetString(name, _, _) |
+        StaticDecl::SetPtr(name, _, _) |
+        StaticDecl::External(name, _) => used.contains(name)
     });
-
-    let mut dead_decls = Vec::new();
-    for name in program.fns.keys() {
-        if !used.contains(name) {
-            dead_decls.push(name.clone());
-        }
-    }
-    dead_decls.into_iter().for_each(|g| {
-        program.fns.remove(&g);
-    });
+    program.fns.retain(|name, _| used.contains(name));
 }
 
 fn mark_statics(statics: &[StaticDecl], symtab: &mut Symtab) {
@@ -100,16 +83,15 @@ fn mark_fns(fns: &HashMap<Global, Function>, symtab: &mut Symtab) {
                 Line::SetCall(_, _, g, _) => {
                     symtab.reference_from(fname, g);
                 }
+                Line::SetTo(_, _, _) |
+                Line::SetUnop(_, _, _, _) |
+                Line::SetBinop(_, _, _, _, _) |
+                Line::SetStruct(_, _, _) |
                 Line::SetCallTemp(_, _, _, _) |
                 Line::SetAddrOfStackVar(_, _, _) |
                 Line::SetFieldOfTemp(_, _, _, _) |
-                Line::SetStruct(_, _, _) |
-                Line::SetConst(_, _, _) |
-                Line::SetTo(_, _, _) |
-                Line::SetBinop(_, _, _, _, _) |
-                Line::SetUnop(_, _, _, _) |
-                Line::WriteToAddr(_, _, _, _) |
                 Line::Label(_) |
+                Line::WriteToAddr(_, _, _, _) |
                 Line::If(_, _, _) |
                 Line::Goto(_) |
                 Line::Ret(_) |
@@ -118,7 +100,8 @@ fn mark_fns(fns: &HashMap<Global, Function>, symtab: &mut Symtab) {
                 Line::StackFree(_) |
                 Line::StackRead(_, _, _, _) |
                 Line::StackWrite(_, _, _) |
-                Line::ReadFromAddr(_, _, _, _) => todo!(),
+                Line::ReadFromAddr(_, _, _, _) |
+                Line::SetConst(_, _, _) => (),
             }
         }
     }
