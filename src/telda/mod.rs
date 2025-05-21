@@ -10,14 +10,28 @@ use self::{codegen::generate_program, Br::*, Wr::*};
 mod codegen;
 mod impl_regalloc;
 
-pub fn compile_to_telda(program: Program) -> Vec<Ins> {
+#[derive(Default)]
+pub struct Options {
+    pub dont_regalloc: bool,
+    pub dont_clean: bool,
+    pub remove_comments: bool,
+}
+
+pub fn compile_to_telda(program: Program, options: Options) -> Vec<Ins> {
     let mut code = generate_program(program);
 
     // pre-regalloc optimisations
     // register alloc
-    apply_register_allocation(&mut code);
+    if !options.dont_regalloc {
+        apply_register_allocation(&mut code);
+    }
     // run post-regalloc optimisations (remove zero-moves)
-    simple_optimisations(&mut code);
+    if !options.dont_clean {
+        simple_optimisations(&mut code);
+    }
+    if options.remove_comments {
+        code.retain(|f| !matches!(f, Ins::Comment(_)));
+    }
 
     code
 }
@@ -249,12 +263,12 @@ impl Ins {
         Self::Jae(i)
     }
     /// alias of `add a, r0b, b`
-    pub const fn MoveB(a: Br, b: Br) -> Self {
-        Ins::AddB(a, R0b, b)
+    pub const fn MoveB(dest: Br, src: Br) -> Self {
+        Ins::AddB(dest, R0b, src)
     }
     /// alias of `add a, r0, b`
-    pub const fn MoveW(a: Wr, b: Wr) -> Self {
-        Ins::AddW(a, R0, b)
+    pub const fn MoveW(dest: Wr, src: Wr) -> Self {
+        Ins::AddW(dest, R0, src)
     }
 }
 

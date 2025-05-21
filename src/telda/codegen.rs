@@ -527,10 +527,10 @@ fn generate_fn(code: &mut Vec<Ins>, mut state: FunctionState, name: Global, f: F
                 let mut ret_reg = Some(R1);
                 for ret_dest in state.get(&rets, None).iter().rev() {
                     match (*ret_dest, ret_reg.take()) {
-                        (Reg::WideReg(wr), Some(ret_reg)) => code.push(Ins::MoveW(wr, ret_reg)),
+                        (Reg::WideReg(wr), Some(ret_reg)) => code.push(Ins::MoveW(ret_reg, wr)),
                         (Reg::WideReg(wr), None) => code.push(Ins::PushW(wr)),
                         (Reg::ByteReg(br), Some(ret_reg)) => {
-                            code.push(Ins::MoveB(br, Br::try_from_wr(ret_reg).unwrap()))
+                            code.push(Ins::MoveB(Br::try_from_wr(ret_reg).unwrap(), br))
                         }
                         (Reg::ByteReg(br), None) => code.push(Ins::PushB(br)),
                     }
@@ -629,12 +629,12 @@ fn generate_call(code: &mut Vec<Ins>, state: &mut FunctionState<'_>, dest: Temp,
         let mut ret_reg = Some(R1);
         for ret_dest in state.get(&dest, Some(&t)) {
             match (*ret_dest, ret_reg.take()) {
-                (Reg::WideReg(wr), Some(ret_reg)) => ret_code.push(Ins::MoveW(wr, ret_reg)),
+                (Reg::WideReg(wr), Some(ret_reg)) => ret_code.push(Ins::MoveW(ret_reg, wr)),
                 (Reg::WideReg(wr), None) => {
                     ret_code.push(Ins::PopW(wr));
                 }
                 (Reg::ByteReg(br), Some(ret_reg)) => {
-                    ret_code.push(Ins::MoveB(br, Br::try_from_wr(ret_reg).unwrap()))
+                    ret_code.push(Ins::MoveB(Br::try_from_wr(ret_reg).unwrap(), br))
                 }
                 (Reg::ByteReg(br), None) => {
                     ret_code.push(Ins::PopB(br));

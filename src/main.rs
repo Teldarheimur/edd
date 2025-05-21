@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 use edd::{
-    compile, flat::{passes::{const_prop_pass, dead_path_removal_pass, dead_removal_pass, Pass}, Program}, rt::{run, RuntimeError, Store, Value}, telda::compile_to_telda, CompileOptions
+    compile, flat::{passes::{const_prop_pass, dead_path_removal_pass, dead_removal_pass, Pass}, Program}, rt::{run, RuntimeError, Store, Value}, telda::{compile_to_telda, Options as TeldaOptions}, CompileOptions
 };
 
 use std::{fs::File, path::PathBuf};
@@ -25,6 +25,12 @@ struct Args {
     #[arg(long)]
     /// Emit flat IR
     emit_flat: bool,
+    #[arg(long)]
+    /// Emit telda code without register allocation
+    dont_regalloc: bool,
+    #[arg(long)]
+    /// Removed out-commented lines from telda code
+    dont_emit_comments: bool,
 
     #[arg(short='O', long)]
     optimised: bool,
@@ -48,6 +54,8 @@ fn main() {
         emit_untyped,
         emit_typed,
         emit_flat,
+        dont_regalloc,
+        dont_emit_comments,
         optimised,
         backend,
         path,
@@ -92,7 +100,15 @@ fn main() {
                 Err(RuntimeError::InvalidMain) => eprintln!("Error: Invalid main function"),
             }
         Backend::Telda => {
-            write_compiled_telda(program, path);
+            let mut opt = TeldaOptions::default();
+            if dont_regalloc {
+                opt.dont_regalloc = true;
+                opt.dont_clean = true;
+            }
+            if dont_emit_comments {
+                opt.remove_comments = true;
+            }
+            write_compiled_telda(program, path, opt);
         }
     }
 
@@ -121,8 +137,8 @@ fn put(vls: &[Value]) -> Value {
 
 use std::io::Write;
 
-fn write_compiled_telda(program: Program, mut path: PathBuf) {
-    let telda = compile_to_telda(program);
+fn write_compiled_telda(program: Program, mut path: PathBuf, opt: TeldaOptions) {
+    let telda = compile_to_telda(program, opt);
     path.set_extension("telda");
 
     let mut file = File::create(path).unwrap();
