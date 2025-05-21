@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 use edd::{
-    compile, flat::{passes::{const_prop_pass, dead_path_removal_pass, dead_removal_pass, Pass}, Program}, rt::{run, RuntimeError, SymbolTable, Value}, telda::compile_to_telda, CompileOptions
+    compile, flat::{passes::{const_prop_pass, dead_path_removal_pass, dead_removal_pass, Pass}, Program}, rt::{run, RuntimeError, Store, Value}, telda::compile_to_telda, CompileOptions
 };
 
 use std::{fs::File, path::PathBuf};
@@ -88,7 +88,7 @@ fn main() {
             match run_prgm(program) {
                 Ok(Value::Naught) => (),
                 Ok(v) => println!("Returned {v}"),
-                Err(RuntimeError::Panic(msg)) => eprintln!("Error: Panic {}{msg}", path.display()),
+                Err(RuntimeError::Panic(msg)) => eprintln!("Error: Panic {msg}"),
                 Err(RuntimeError::InvalidMain) => eprintln!("Error: Invalid main function"),
             }
         Backend::Telda => {
@@ -99,7 +99,7 @@ fn main() {
 }
 
 fn run_prgm(program: Program) -> Result<Value, RuntimeError> {
-    let mut symtab = SymbolTable::new();
+    let mut symtab = Store::new();
 
     symtab.add_func("puts", put);
     symtab.add_func("putu32", put);

@@ -6,8 +6,7 @@ use std::{
 use crate::ttype::Type;
 
 use super::{
-    flat_codegen::flatten_type, Binop, Const, FlatType, Function, Global, Ident, Label, Line,
-    Program, StaticDecl, Temp, Unop,
+    flat_codegen::flatten_type, Binop, Const, FlatType, Function, Global, Label, Line, Program, StackVar, StaticDecl, Temp, Unop
 };
 
 impl Function {
@@ -23,7 +22,8 @@ impl Function {
             .collect();
 
         Self {
-            local_names,
+            reg_names: local_names,
+            stack_names: Vec::new(), // TODO: fix
             arg_types,
             ret_type: flatten_type(ret_type),
             lines: Vec::new(),
@@ -46,10 +46,9 @@ pub struct DisplayTemp<'a> {
     inner: &'a Temp,
     locals: &'a [Box<str>],
 }
-#[derive(Clone, Copy)]
-pub struct DisplayIdent<'a> {
-    inner: &'a Ident,
-    locals: &'a [Box<str>],
+pub struct DisplayStackVar<'a> {
+    inner: &'a StackVar,
+    stacks: &'a [Box<str>],
 }
 impl Temp {
     #[inline]
@@ -64,33 +63,34 @@ impl Temp {
         }
     }
 }
-impl Ident {
+impl StackVar {
     #[inline]
-    pub fn display(&self) -> DisplayIdent<'_> {
+    pub fn display(&self) -> DisplayStackVar<'_> {
         self.display_with(&[])
     }
     #[inline]
-    pub fn display_with<'a>(&'a self, locals: &'a [Box<str>]) -> DisplayIdent<'a> {
-        DisplayIdent {
+    pub fn display_with<'a>(&'a self, stacks: &'a [Box<str>]) -> DisplayStackVar<'a> {
+        DisplayStackVar {
             inner: self,
-            locals,
+            stacks,
         }
     }
 }
 impl Display for DisplayTemp<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(name) = self.locals.get(self.inner.0) {
-            write!(f, "${}{name}", self.inner.0)
+            write!(f, "%{}{name}", self.inner.0)
         } else {
-            write!(f, "${}", self.inner.0)
+            write!(f, "%{}", self.inner.0)
         }
     }
 }
-impl Display for DisplayIdent<'_> {
+impl Display for DisplayStackVar<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.inner {
-            Ident::Temp(t) => write!(f, "{}", t.display_with(self.locals)),
-            Ident::Global(g) => write!(f, "{g}"),
+        if let Some(name) = self.stacks.get(self.inner.0) {
+            write!(f, "${}{name}", self.inner.0)
+        } else {
+            write!(f, "${}", self.inner.0)
         }
     }
 }
@@ -156,8 +156,9 @@ impl Display for Program {
             name,
             Function {
                 lines,
-                local_names,
+                reg_names: local_names,
                 arg_types,
+                stack_names,
                 ret_type,
             },
         ) in &self.fns
@@ -173,7 +174,7 @@ impl Display for Program {
             }
             writeln!(f, ") {ret_type}:")?;
             for line in lines {
-                writeln!(f, "    {}", line.display_with(local_names))?;
+                writeln!(f, "    {}", line.display_with(local_names, stack_names))?;
             }
         }
         Ok(())
@@ -182,13 +183,14 @@ impl Display for Program {
 impl Line {
     #[inline]
     pub fn display(&self) -> DisplayLine<'_> {
-        self.display_with(&[])
+        self.display_with(&[], &[])
     }
     #[inline]
-    pub fn display_with<'a>(&'a self, locals: &'a [Box<str>]) -> DisplayLine<'a> {
+    pub fn display_with<'a>(&'a self, locals: &'a [Box<str>], stacks: &'a [Box<str>]) -> DisplayLine<'a> {
         DisplayLine {
             inner: self,
             locals,
+            stacks,
         }
     }
 }
@@ -196,10 +198,12 @@ impl Line {
 pub struct DisplayLine<'a> {
     inner: &'a Line,
     locals: &'a [Box<str>],
+    stacks: &'a [Box<str>],
 }
 impl Display for DisplayLine<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let locals = self.locals;
+        let stacks = self.stacks;
         match self.inner {
             Line::SetConst(dest, t, src) => write!(f, "{} = {t} {src}", dest.display_with(locals)),
             Line::SetTo(dest, t, src) => write!(
@@ -221,13 +225,52 @@ impl Display for DisplayLine<'_> {
                 dest.display_with(locals),
                 op1.display_with(locals)
             ),
-            Line::SetAddrOf(dest, t, src) => write!(
+            Line::SetAddrOfGlobal(dest, t, src) => write!(
+                f,
+                "{} = {t} &{src}",
+                dest.display_with(locals),
+            ),
+            Line::SetAddrOfStackVar(dest, t, src) => write!(
                 f,
                 "{} = {t} &{}",
                 dest.display_with(locals),
-                src.display_with(locals)
+                src.display_with(stacks)
             ),
+            Line::SetFieldOfTemp(dest, t, src, field) => write!(
+                f,
+                "{} = {t} {}.{field}",
+                dest.display_with(locals),
+                src.display_with(locals),
+            ),
+            Line::SetStruct(dest, t, fields) => {
+                write!(f, "{} = {t} {{", dest.display_with(locals))?;
+                let mut first = true;
+                for field in &**fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{}", field.display_with(locals))?;
+                }
+                write!(f, "}}")
+            }
             Line::SetCall(dest, t, name, args) => {
+                write!(
+                    f,
+                    "{} = {t} {name}(",
+                    dest.display_with(locals),
+                )?;
+                let mut first = true;
+                for arg in &**args {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{}", arg.display_with(locals))?;
+                }
+                write!(f, ")")
+            }
+            Line::SetCallTemp(dest, t, name, args) => {
                 write!(
                     f,
                     "{} = {t} {}(",
@@ -258,19 +301,33 @@ impl Display for DisplayLine<'_> {
             Line::ReadGlobal(dest, t, src) => {
                 write!(f, "{} = {t} {src}", dest.display_with(locals))
             }
-            Line::WriteTo(dest_ptr, t, src) => write!(
+            Line::WriteToAddr(dest_ptr, offset, t, src) => write!(
                 f,
-                "*{} = {t} {}",
+                "{}[{}] = {t} {}",
                 dest_ptr.display_with(locals),
-                src.display_with(locals)
+                offset.display_with(locals),
+                src.display_with(locals),
             ),
-            Line::SetIndex(dest, t, src) => write!(
+            Line::ReadFromAddr(dest, t, src_ptr, offset) => write!(
                 f,
-                "{}[??] = {t} {}",
+                "{} = {t} {}[{}]",
                 dest.display_with(locals),
-                src.display_with(locals)
+                src_ptr.display_with(locals),
+                offset.display_with(locals),
             ),
-            Line::Panic(msg) => write!(f, "panic({msg})"),
+            Line::StackAlloc(sv, t) => {
+                write!(f, "{} = @STACK_ALLOC {t}", sv.display_with(stacks))
+            }
+            Line::StackFree(sv) => {
+                write!(f, "@STACK_FREE {}", sv.display_with(stacks))
+            }
+            Line::StackWrite(sv, t1, t2) => {
+                write!(f, "@STACK[{} + {}] = {}", sv.display_with(stacks), t1.display_with(locals), t2.display_with(locals))
+            }
+            Line::StackRead(t1, t, sv, t2) => {
+                write!(f, "{} = {t} @STACK[{} + {}]", t1.display_with(locals), sv.display_with(stacks), t2.display_with(locals))
+            }
+            Line::Panic(msg) => write!(f, "@PANIC({msg})"),
         }
     }
 }

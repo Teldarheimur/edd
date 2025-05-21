@@ -1,0 +1,28 @@
+include("std.ðs");
+
+fn main() unit {
+    let array = [5, 2, 1, 5];
+    print_some_numbies(array[:]);
+    array[2] = 7;
+    print_some_numbies(array[1:<3]);
+
+    i_come_from_c((array[:]).ptr, 2);
+}
+
+fn print_some_numbies(slice: [&]i16) unit {
+    if slice.len == 0: {}
+    else {
+        puti16(slice[0]);
+        print_some_numbies(slice[1:]);
+    }
+}
+
+fn i_come_from_c(ptr: [*]i16, len: u16) unit {
+    crutch(ptr, len, 0);
+}
+fn crutch(p: [*]i16, len: u16, i: u16) unit { 
+    if i < 0: {
+        puti16(p[i]);
+        crutch(p, len, i+1);
+    } else {}
+}

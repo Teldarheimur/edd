@@ -1,7 +1,7 @@
 use std::{collections::HashSet, rc::Rc};
 
 use crate::ttype::{
-    ast::{Expr, PlaceExpr, Statement},
+    ast::{Expr, PlaceExpr, SliceEndIndex, Statement},
     Type,
 };
 
@@ -163,8 +163,14 @@ pub fn static_eval(
             out.push(StaticDecl::SetString(place, t, res));
             Ok(())
         }
+        Expr::FieldAccess(_, structlike, field) => {
+            todo!("FieldAccess({structlike}, {field})")
+        }
+        Expr::Element(_, _, _) => todo!(),
+        Expr::SliceOfArray(_, _) => todo!(),
+        Expr::Slice(_, _, _, _) => todo!(),
         Expr::Ref(_, Ok(_)) => todo!(),
-        Expr::Array(_, _) => todo!(),
+        Expr::Array(_, _, _) => todo!(),
         Expr::StructConstructor(_, _) => todo!(),
         Expr::Cast(_, _, _, _) => todo!(),
         Expr::Add(_, _, _) => todo!(),
@@ -215,6 +221,7 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
         Expr::Cast(_, e, _, _) |
         Expr::Not(_, e) |
         Expr::Neg(_, e) |
+        Expr::SliceOfArray(_, Err(e)) |
         Expr::Deref(_, e) => expr_symbol_deps(e, deps, overshadowed),
         Expr::Block(_, stmnts) => {
             let overshadowed = &mut overshadowed.clone();
@@ -222,13 +229,17 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
                 statement_symbol_deps(stmnt, deps, overshadowed);
             }
         }
+        Expr::SliceOfArray(_, Ok(pl_expr)) |
         Expr::Ref(_, Ok(pl_expr)) => pl_expr_symbol_deps(pl_expr, deps, overshadowed),
         Expr::StructConstructor(_, es) => {
             for (_, e) in es.iter() {
                 expr_symbol_deps(e, deps, overshadowed);
             }
         }
-        Expr::Array(_, es) => {
+        Expr::FieldAccess(_, structlike, field) => {
+            todo!("FieldAccess({structlike}, {field})")
+        }
+        Expr::Array(_, _, es) => {
             for e in es.iter() {
                 expr_symbol_deps(e, deps, overshadowed);
             }
@@ -239,11 +250,15 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
                 expr_symbol_deps(e, deps, overshadowed);
             }
         }
+        Expr::Slice(_, e, e2, SliceEndIndex::Excl(e3)) |
+        Expr::Slice(_, e, e2, SliceEndIndex::Incl(e3)) |
         Expr::If(_, e, e2, e3) => {
             expr_symbol_deps(e, deps, overshadowed);
             expr_symbol_deps(e2, deps, overshadowed);
             expr_symbol_deps(e3, deps, overshadowed)
         }
+        Expr::Slice(_, e1, e2, SliceEndIndex::Open) |
+        Expr::Element(_, e1, e2) |
         Expr::Add(_, e1, e2) |
         Expr::Sub(_, e1, e2) |
         Expr::Mul(_, e1, e2) |
@@ -271,9 +286,9 @@ fn pl_expr_symbol_deps(
         PlaceExpr::Deref(_, e, _) | PlaceExpr::FieldAccess(_, e, _) => {
             expr_symbol_deps(e, deps, overshadowed);
         }
-        PlaceExpr::Index(_, e1, e2) => {
-            expr_symbol_deps(e1, deps, overshadowed);
-            expr_symbol_deps(e2, deps, overshadowed);
+        PlaceExpr::Element(_, e, _, i) => {
+            expr_symbol_deps(e, deps, overshadowed);
+            expr_symbol_deps(i, deps, overshadowed);
         }
     }
 }
@@ -284,11 +299,11 @@ fn statement_symbol_deps(
     overshadowed: &mut HashSet<Rc<str>>,
 ) {
     match stmnt {
-        Statement::Rebind(_, pl_expr, expr) => {
+        Statement::Assign(_, pl_expr, expr) => {
             pl_expr_symbol_deps(pl_expr, deps, overshadowed);
             expr_symbol_deps(expr, deps, overshadowed);
         }
-        Statement::Let(_, n, _, e) | Statement::Var(_, n, _, e) => {
+        Statement::Let(_, _, n, _, e) | Statement::Var(_, _, n, _, e) => {
             expr_symbol_deps(e, deps, overshadowed);
             overshadowed.insert(n.clone());
         }

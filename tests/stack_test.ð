@@ -1,0 +1,25 @@
+fn look(ptr: *u16) unit {
+    *ptr = 2;
+}
+
+fn main() unit {
+    var a: ((u16)) = 0;
+    a = 5;
+    {
+        look(&a);
+        a = 6;
+        var arr1: [0]u8 = [];
+        {
+            var arr2 = [10, 20];
+        };
+        {
+            var arr3 = [30, 40, 50];
+            {
+                var arr4 = [60];
+                var arr5 = [70];
+                var arr6 = [80];
+            }
+        }
+    };
+    var arr7: [0]unit = [];
+}

@@ -1,7 +1,7 @@
 use std::{fmt::Display, path::Path};
 
 use flat::{flatten, Program};
-use ttype::type_checker::check_program;
+use ttype::type_checker::check;
 
 use self::parse::parse_file;
 
@@ -31,7 +31,7 @@ pub fn compile(path: &Path, options: CompileOptions) -> Result<Program, Box<dyn 
     if let Some(hook) = options.parsed_hook {
         hook(&program);
     }
-    let program = check_program(program).map_err(|e| -> Box<dyn Display> { Box::new(e) })?;
+    let program = check(program).map_err(|e| -> Box<dyn Display> { Box::new(e) })?;
     if let Some(hook) = options.checked_hook {
         hook(&program);
     }

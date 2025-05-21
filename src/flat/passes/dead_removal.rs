@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::flat::{Function, Global, Ident, Line, Program, StaticDecl, Temp};
+use crate::flat::{Function, Global, Line, Program, StaticDecl, Temp};
 
 #[derive(Debug, Default)]
 struct Symtab {
@@ -95,24 +95,30 @@ fn mark_fns(fns: &HashMap<Global, Function>, symtab: &mut Symtab) {
         for line in &f.lines {
             match line {
                 Line::WriteGlobal(g, _, _) |
-                Line::SetAddrOf(_, _, Ident::Global(g)) |
+                Line::SetAddrOfGlobal(_, _, g) |
                 Line::ReadGlobal(_, _, g) |
-                Line::SetCall(_, _, Ident::Global(g), _) => {
+                Line::SetCall(_, _, g, _) => {
                     symtab.reference_from(fname, g);
                 }
-                Line::SetCall(_, _, Ident::Temp(_), _) |
-                Line::SetAddrOf(_, _, Ident::Temp(_)) |
+                Line::SetCallTemp(_, _, _, _) |
+                Line::SetAddrOfStackVar(_, _, _) |
+                Line::SetFieldOfTemp(_, _, _, _) |
+                Line::SetStruct(_, _, _) |
                 Line::SetConst(_, _, _) |
                 Line::SetTo(_, _, _) |
                 Line::SetBinop(_, _, _, _, _) |
                 Line::SetUnop(_, _, _, _) |
-                Line::WriteTo(_, _, _) |
+                Line::WriteToAddr(_, _, _, _) |
                 Line::Label(_) |
                 Line::If(_, _, _) |
                 Line::Goto(_) |
                 Line::Ret(_) |
                 Line::Panic(_) |
-                Line::SetIndex(_, _, _) => ()
+                Line::StackAlloc(_, _) |
+                Line::StackFree(_) |
+                Line::StackRead(_, _, _, _) |
+                Line::StackWrite(_, _, _) |
+                Line::ReadFromAddr(_, _, _, _) => todo!(),
             }
         }
     }
@@ -125,31 +131,44 @@ fn remove_unused_locals(program: &mut Program) {
         let mut upper = 0;
         for line in &f.lines {
             match line {
+                Line::StackAlloc(_, _) |
+                Line::StackFree(_) |
                 Line::Goto(_) |
                 Line::Panic(_) |
                 Line::Label(_) => (),
                 &Line::ReadGlobal(Temp(i), _, _) |
-                &Line::SetAddrOf(Temp(i), _, Ident::Global(_)) |
+                &Line::SetAddrOfGlobal(Temp(i), _, _) |
+                &Line::SetAddrOfStackVar(Temp(i), _, _) |
                 &Line::SetConst(Temp(i), _, _) => upper = i.max(upper),
+                &Line::StackRead(Temp(f), _, _, Temp(t)) |
+                &Line::StackWrite(_, Temp(f), Temp(t)) => {
+                    set_reference_from(&mut references, f, t, &mut upper);
+                }
+                &Line::ReadFromAddr(Temp(f), _, Temp(i), Temp(j)) |
+                &Line::WriteToAddr(Temp(f), Temp(i), _, Temp(j)) |
                 &Line::SetBinop(Temp(f), _, _, Temp(i), Temp(j)) => {
                     set_reference_from(&mut references, f, i, &mut upper);
                     set_reference_from(&mut references, f, j, &mut upper);
                 }
+                &Line::SetFieldOfTemp(Temp(f), _, Temp(i), _) |
                 &Line::SetUnop(Temp(f), _, _, Temp(i)) |
-                &Line::WriteTo(Temp(f), _, Temp(i)) |
-                &Line::SetIndex(Temp(f), _, Temp(i)) |
-                &Line::SetAddrOf(Temp(f), _, Ident::Temp(Temp(i))) |
                 &Line::SetTo(Temp(f), _, Temp(i)) => set_reference_from(&mut references, f, i, &mut upper),
                 &Line::WriteGlobal(ref _g, _, Temp(i)) => queue.push(i),
                 &Line::If(Temp(i), _, _) |
                 &Line::Ret(Temp(i)) => queue.push(i),
-                Line::SetCall(Temp(t), _, i, ts) => {
+                Line::SetStruct(Temp(t), _, ts) |
+                Line::SetCall(Temp(t), _, _, ts) => {
                     queue.push(*t);
                     // TODO: check if function called is pure, if it is, we can set references instead of `queue`
                     for Temp(i) in &**ts {
                         queue.push(*i);
                     }
-                    if let Ident::Temp(Temp(i)) = i {
+                }
+                Line::SetCallTemp(Temp(t), _, i, ts) => {
+                    queue.push(*t);
+                    queue.push(i.inner());
+                    // TODO: check if function called is pure, if it is, we can set references instead of `queue`
+                    for Temp(i) in &**ts {
                         queue.push(*i);
                     }
                 }
@@ -180,32 +199,43 @@ fn remove_unused_locals(program: &mut Program) {
                 Line::SetConst(t, _, _) |
                 Line::ReadGlobal(t, _, _) |
                 Line::WriteGlobal(_, _, t) |
-                Line::SetAddrOf(t, _, Ident::Global(_)) |
+                Line::SetAddrOfGlobal(t, _, _) |
+                Line::SetAddrOfStackVar(t, _, _) |
                 Line::If(t, _, _) |
                 Line::Ret(t) => rename_temp(t, &dead, &mut dead_lines, line_index),
+                Line::StackRead(t1, _, _, t2) |
+                Line::StackWrite(_, t1, t2) |
                 Line::SetUnop(t1, _, _, t2) |
-                Line::WriteTo(t1, _, t2) |
-                Line::SetIndex(t1, _, t2) |
-                Line::SetAddrOf(t1, _, Ident::Temp(t2)) |
+                Line::SetFieldOfTemp(t1, _, t2, _) |
                 Line::SetTo(t1, _, t2) => {
                     rename_temp(t1, &dead, &mut dead_lines, line_index);
                     rename_temp(t2, &dead, &mut dead_lines, line_index);
                 }
+                Line::ReadFromAddr(t1, _, t2, t3) |
+                Line::WriteToAddr(t1, t2, _, t3) |
                 Line::SetBinop(t1, _, _, t2, t3) => {
                     rename_temp(t1, &dead, &mut dead_lines, line_index);
                     rename_temp(t2, &dead, &mut dead_lines, line_index);
                     rename_temp(t3, &dead, &mut dead_lines, line_index);
                 }
-                Line::SetCall(t, _, i, ts) => {
+                Line::SetStruct(t, _, ts) |
+                Line::SetCall(t, _, _, ts) => {
                     rename_temp(t, &dead, &mut dead_lines, line_index);
                     // TODO: check if function called is pure, if it is, we can set references instead of `queue`
                     for t in &mut **ts {
                         rename_temp(t, &dead, &mut dead_lines, line_index);
                     }
-                    if let Ident::Temp(t) = i {
+                }
+                Line::SetCallTemp(t, _, t2, ts) => {
+                    rename_temp(t, &dead, &mut dead_lines, line_index);
+                    rename_temp(t2, &dead, &mut dead_lines, line_index);
+                    // TODO: check if function called is pure, if it is, we can set references instead of `queue`
+                    for t in &mut **ts {
                         rename_temp(t, &dead, &mut dead_lines, line_index);
                     }
                 }
+                Line::StackFree(_) |
+                Line::StackAlloc(_, _) |
                 Line::Label(_) |
                 Line::Goto(_) |
                 Line::Panic(_) => ()
@@ -213,8 +243,8 @@ fn remove_unused_locals(program: &mut Program) {
         }
 
         for dead in dead.into_iter().rev() {
-            if dead < f.local_names.len() {
-                f.local_names.remove(dead);
+            if dead < f.reg_names.len() {
+                f.reg_names.remove(dead);
             }
         }
         dead_lines.dedup();
