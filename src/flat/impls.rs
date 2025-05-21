@@ -46,7 +46,7 @@ pub struct DisplayTemp<'a> {
     inner: &'a Temp,
     locals: &'a [Box<str>],
 }
-pub struct DisplayStackOffset<'a> {
+pub struct DisplayStackVar<'a> {
     inner: &'a StackVar,
     stacks: &'a [Box<str>],
 }
@@ -65,12 +65,12 @@ impl Temp {
 }
 impl StackVar {
     #[inline]
-    pub fn display(&self) -> DisplayStackOffset<'_> {
+    pub fn display(&self) -> DisplayStackVar<'_> {
         self.display_with(&[])
     }
     #[inline]
-    pub fn display_with<'a>(&'a self, stacks: &'a [Box<str>]) -> DisplayStackOffset<'a> {
-        DisplayStackOffset {
+    pub fn display_with<'a>(&'a self, stacks: &'a [Box<str>]) -> DisplayStackVar<'a> {
+        DisplayStackVar {
             inner: self,
             stacks,
         }
@@ -85,7 +85,7 @@ impl Display for DisplayTemp<'_> {
         }
     }
 }
-impl Display for DisplayStackOffset<'_> {
+impl Display for DisplayStackVar<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(name) = self.stacks.get(self.inner.0) {
             write!(f, "${}{name}", self.inner.0)
@@ -315,17 +315,17 @@ impl Display for DisplayLine<'_> {
                 src_ptr.display_with(locals),
                 offset.display_with(locals),
             ),
-            Line::StackAlloc(so, t) => {
-                write!(f, "{} = @STACK_ALLOC {t}", so.display_with(stacks))
+            Line::StackAlloc(sv, t) => {
+                write!(f, "{} = @STACK_ALLOC {t}", sv.display_with(stacks))
             }
-            Line::StackFree(so) => {
-                write!(f, "@STACK_FREE {}", so.display_with(stacks))
+            Line::StackFree(sv) => {
+                write!(f, "@STACK_FREE {}", sv.display_with(stacks))
             }
-            Line::StackWrite(so, t1, t2) => {
-                write!(f, "@STACK[{} + {}] = {}", so.display_with(stacks), t1.display_with(locals), t2.display_with(locals))
+            Line::StackWrite(sv, t1, t2) => {
+                write!(f, "@STACK[{} + {}] = {}", sv.display_with(stacks), t1.display_with(locals), t2.display_with(locals))
             }
-            Line::StackRead(t1, t, so, t2) => {
-                write!(f, "{} = {t} @STACK[{} + {}]", t1.display_with(locals), so.display_with(stacks), t2.display_with(locals))
+            Line::StackRead(t1, t, sv, t2) => {
+                write!(f, "{} = {t} @STACK[{} + {}]", t1.display_with(locals), sv.display_with(stacks), t2.display_with(locals))
             }
             Line::Panic(msg) => write!(f, "@PANIC({msg})"),
         }

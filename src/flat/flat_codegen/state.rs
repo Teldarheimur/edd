@@ -121,8 +121,8 @@ impl<'a> FlattenState<'a> {
         }
         self.temp_types[temp.inner()] = Some(t);
     }
-    pub fn set_stack_type(&mut self, so: StackVar, t: FlatType) {
-        debug_assert!(so.inner() == self.stack_types.len());
+    pub fn set_stack_type(&mut self, sv: StackVar, t: FlatType) {
+        debug_assert!(sv.inner() == self.stack_types.len());
         self.stack_types.push(t);
     }
     pub fn get_global_type(&self, g: Global) -> Option<FlatType> {

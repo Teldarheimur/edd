@@ -550,10 +550,10 @@ fn flatten_block(
                         flatten_expr(e, ident_t.clone(), temp, state);
                         // `place` was set to be the ident already
                     }
-                    Named::Stack(so) => {
+                    Named::Stack(sv) => {
                         let place = state.new_temp(&n, ident_t.clone());
                         flatten_expr(e, ident_t.clone(), place.clone(), state);
-                        state.add_code(Line::StackWrite(so, Temp::ZERO, place));
+                        state.add_code(Line::StackWrite(sv, Temp::ZERO, place));
                     }
                     Named::Global(g) => {
                         let place = state.new_temp(&n, ident_t.clone());

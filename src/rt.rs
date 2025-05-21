@@ -357,20 +357,20 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
             Line::Ret(name) => {
                 break Ok(state.read_reg(name.clone()));
             }
-            Line::StackAlloc(so, t) => {
-                state.alloc_stack(so.clone(), size_on_stack(t));
+            Line::StackAlloc(sv, t) => {
+                state.alloc_stack(sv.clone(), size_on_stack(t));
             }
-            Line::StackFree(so) => {
-                state.release_stack(so.clone());
+            Line::StackFree(sv) => {
+                state.release_stack(sv.clone());
             }
-            Line::StackWrite(so, t1, t2) => {
-                let addr = state.stack_addr(so.clone(), t1.clone());
+            Line::StackWrite(sv, t1, t2) => {
+                let addr = state.stack_addr(sv.clone(), t1.clone());
                 let val = state.read_reg(t2.clone());
 
                 state.write_addr(addr, val);
             }
-            Line::StackRead(t1, _, so, t2) => {
-                let addr = state.stack_addr(so.clone(), t2.clone());
+            Line::StackRead(t1, _, sv, t2) => {
+                let addr = state.stack_addr(sv.clone(), t2.clone());
                 let val = state.read_addr(addr);
                 state.set_temp(t1.clone(), val);
             }

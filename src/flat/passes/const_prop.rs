@@ -19,8 +19,8 @@ impl From<Temp> for Ident {
     }
 }
 impl From<StackVar> for Ident {
-    fn from(so: StackVar) -> Self {
-        Ident::Stack(so)
+    fn from(sv: StackVar) -> Self {
+        Ident::Stack(sv)
     }
 }
 
