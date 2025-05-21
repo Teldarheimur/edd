@@ -20,3 +20,5 @@
 - [ ] codegen
 - [ ] make pointers work
 - [ ] add structs and enums
+- [ ] don't use labels in flat structure, instead use blocks which each have their own state instead of functions.
+      make sure epilogues get copied when blocks branch out so that stack allocs get freed in each block and make a clear mechanism for stackvars and temps carried over to new blocks
