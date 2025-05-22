@@ -1,5 +1,9 @@
 # TODO
 
+- [ ] fix bug where register allocation accidentally clobbers registers from arguments
+  or return values (probably fixable by making sure colouring knows about
+  already coloured registers (physical registers), eg. from arguments,
+  returns or hard-coded during code-gen)
 - [x] type check
   - [x] add u8, i8, u16, i16, u32, i32,
   - [x] handle arrays, slices, array pointer
