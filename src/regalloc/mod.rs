@@ -1,6 +1,5 @@
 pub mod liveness;
 pub mod reg_alloc;
-pub mod vec_view;
 
 pub trait Ins<R, P, L> {
     /// None means that the instruction is followed by the next instruction.
@@ -25,7 +24,7 @@ pub trait Ins<R, P, L> {
 }
 
 pub trait Register<S, P> {
-    fn new_symbolic(symbol: S) -> Self;
+    fn new_symbolic(symbol: Self, i: usize) -> Self;
     fn new_physical(physical_register: P) -> Self;
 
     fn as_symbolic(&self) -> Option<&S>;

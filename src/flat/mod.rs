@@ -66,6 +66,9 @@ impl Temp {
     pub(crate) fn inner(&self) -> usize {
         self.0
     }
+    pub (crate) fn args() -> impl Iterator<Item=Self> {
+        (1..).map(Temp)
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Global(Rc<str>);

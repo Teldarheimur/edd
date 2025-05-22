@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{flat::{FlatType, Program}, regalloc::{reg_alloc::register_allocate, vec_view::VecView}};
+use crate::{flat::{FlatType, Program as FlatProgram}, regalloc::{reg_alloc::register_allocate}};
 
 use self::{codegen::generate_program, Br::*, Wr::*};
 
@@ -17,43 +17,28 @@ pub struct Options {
     pub remove_comments: bool,
 }
 
-pub fn compile_to_telda(program: Program, options: Options) -> Vec<Ins> {
-    let mut code = generate_program(program);
+pub fn compile_to_telda(program: FlatProgram, options: Options) -> Program {
+    let mut program = generate_program(program);
 
     // pre-regalloc optimisations
     // register alloc
     if !options.dont_regalloc {
-        apply_register_allocation(&mut code);
+        apply_register_allocation(&mut program.fns);
     }
     // run post-regalloc optimisations (remove zero-moves)
     if !options.dont_clean {
-        simple_optimisations(&mut code);
+        program.text_code().for_each(|code| simple_optimisations(code));
     }
     if options.remove_comments {
-        code.retain(|f| !matches!(f, Ins::Comment(_)));
+        program.text_code().for_each(|code| code.retain(|f| !matches!(f, Ins::Comment(_))));
     }
 
-    code
+    program
 }
 
-fn apply_register_allocation(code: &mut Vec<Ins>) {
-    let mut start = 0;
-    while start < code.len() {
-        // Find next function start
-        let function_start_here = matches!(code[start], Ins::FunctionStartMarker);
-            start += 1;
-
-        if !function_start_here {
-            continue;
-        }
-
-        let fn_len = code[start..].iter().position(|l| matches!(l, Ins::FunctionEndMarker)).unwrap();
-        let end = start + fn_len;
-
-        let body = VecView::new(code, start, end);
-        register_allocate(body, &impl_regalloc::CONV);
-
-        start = end;
+fn apply_register_allocation<'a>(fns: impl IntoIterator<Item=&'a mut Function>) {
+    for f in fns {
+        register_allocate(&mut f.code, &impl_regalloc::CONV, &mut f.args, &mut f.rets);
     }
 }
 
@@ -62,13 +47,15 @@ fn simple_optimisations(code: &mut [Ins]) {
         let mut comment_out = false;
         match ins {
             // remove no-op moves
-            Ins::AddW(a, R0, b) if a == b => {
+            Ins::AddW(a, R0, b) |
+            Ins::OrW(a, R0, b) if a == b => {
                 comment_out = true;
             }
-            Ins::AddB(a, R0b, b) if a == b => {
+            Ins::AddB(a, R0b, b) |
+            Ins::OrB(a, R0b, b) if a == b => {
                 comment_out = true;
             }
-            // shorten immediate loads of values that fit into bytes for registers r6-10 (that zero-extend)
+            // shorten immediate loads of values that fit into bytes for registers r6-10 (which zero-extend)
             &mut Ins::LdiW(r @ (R6 | R7 | R8 | R9 | R10), Wi::Constant(b @ 0..=255)) => {
                 *ins = Ins::LdiB(Br::try_from_wr(r).unwrap(), Bi::Constant(b as u8));
             }
@@ -184,6 +171,29 @@ pub enum Bi {
     Constant(u8),
 }
 
+pub struct Function {
+    name: Rc<str>,
+    global: bool,
+    code: Vec<Ins>,
+    args: Vec<Reg>,
+    rets: Vec<Reg>,
+}
+
+pub struct Program {
+    data: Vec<Ins>,
+    fns: Vec<Function>,
+    extra_text: Vec<Ins>,
+}
+
+impl Program {
+    pub fn text_code(&mut self) -> impl Iterator<Item=&'_ mut Vec<Ins>> {
+        self.fns
+            .iter_mut()
+            .map(|f| &mut f.code)
+            .chain(std::iter::once(&mut self.extra_text))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ins {
     Null,
@@ -193,10 +203,6 @@ pub enum Ins {
     String(Box<str>),
     Ref(Rc<str>),
     Global(Rc<str>),
-    FunctionStartMarker,
-    FunctionEndMarker,
-    StaticMarker,
-    Seg(&'static str),
     Comment(Box<str>),
 
     Nop,
@@ -266,16 +272,65 @@ impl Ins {
     pub const fn Jnc(i: Wi) -> Self {
         Self::Jae(i)
     }
-    /// alias of `add a, r0b, b`
+    /// alias of `or a, r0b, b`
     pub const fn MoveB(dest: Br, src: Br) -> Self {
-        Ins::AddB(dest, R0b, src)
+        Ins::OrB(dest, R0b, src)
     }
-    /// alias of `add a, r0, b`
+    /// alias of `or a, r0, b`
     pub const fn MoveW(dest: Wr, src: Wr) -> Self {
-        Ins::AddW(dest, R0, src)
+        Ins::OrW(dest, R0, src)
     }
 }
 
+impl Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Function { name, global, code, args, rets } = self;
+
+        if *global {
+            writeln!(f, ".global {name}")?;
+        }
+        // write args as comment above name
+        write!(f, "; ")?;
+        for arg in args {
+            write!(f, "{arg} ", )?;
+        }
+        write!(f, "->")?;
+        for ret in rets {
+            write!(f, " {ret}", )?;
+        }
+        writeln!(f)?;
+        writeln!(f, "{name}:")?;
+        // write code
+        for ins in code {
+            writeln!(f, "{ins}")?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Program { data, fns, extra_text } = self;
+
+        if !data.is_empty() {
+            writeln!(f, ".seg data")?;
+            for ins in data {
+                writeln!(f, "{ins}")?;
+            }
+        }
+        if !fns.is_empty() || !extra_text.is_empty() {
+            writeln!(f, ".seg text")?;
+            for func in fns {
+                write!(f, "{func}")?;
+            }
+            for ins in extra_text {
+                writeln!(f, "{ins}")?;
+            }
+        }
+
+        Ok(())
+    }
+}
 impl Display for Ins {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::Ins::*;
@@ -287,10 +342,6 @@ impl Display for Ins {
             Byte(b) => write!(f, "    .byte {b}"),
             Wide(w) => write!(f, "    .wide {w}"),
             String(s) => write!(f, "    .string {s}"),
-            FunctionStartMarker => write!(f, "; function"),
-            FunctionEndMarker => write!(f, "    ; function end"),
-            StaticMarker => write!(f, "; static"),
-            Seg(seg) => write!(f, ".seg {seg}"),
             Comment(c) => write!(f, "# {c}"),
 
             Nop => write!(f, ""), // !!
@@ -348,6 +399,14 @@ impl Display for Ins {
     }
 }
 
+impl Display for Reg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ByteReg(r) => r.fmt(f),
+            Self::WideReg(r) => r.fmt(f),
+        }
+    }
+}
 impl Display for Br {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

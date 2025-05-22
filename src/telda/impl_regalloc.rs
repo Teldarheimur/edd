@@ -32,12 +32,16 @@ pub const CONV: CallingConvention<Reg, 5, 5, 1, 4> = CallingConvention {
 
 impl Register<usize, Reg> for Reg {
     #[track_caller]
-    fn new_symbolic(symbol: usize) -> Self {
-        todo!("{symbol}")
+    fn new_symbolic(symbol: Self, i: usize) -> Self {
+        match symbol {
+            ByteReg(Rpb(_)) => ByteReg(Rpb(i)),
+            WideReg(Rpw(_)) => WideReg(Rpw(i)),
+            _ => unreachable!(),
+        }
     }
 
     #[track_caller]
-    fn new_physical(physical_register: Reg) -> Self {
+    fn new_physical(physical_register: Self) -> Self {
         match physical_register {
             ByteReg(Rpb(_)) => unreachable!(),
             WideReg(Rpw(_)) => unreachable!(),
@@ -108,10 +112,6 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
             TeldaIns::String(_) |
             TeldaIns::Ref(_) |
             TeldaIns::Global(_) |
-            TeldaIns::FunctionStartMarker |
-            TeldaIns::FunctionEndMarker |
-            TeldaIns::StaticMarker |
-            TeldaIns::Seg(_) |
             TeldaIns::Comment(_) |
             TeldaIns::Nop => Vec::new(),
             TeldaIns::PushB(r) => vec![ByteReg(r)],
@@ -177,10 +177,6 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
             TeldaIns::String(_) |
             TeldaIns::Ref(_) |
             TeldaIns::Global(_) |
-            TeldaIns::FunctionStartMarker |
-            TeldaIns::FunctionEndMarker |
-            TeldaIns::StaticMarker |
-            TeldaIns::Seg(_) |
             TeldaIns::Comment(_) |
             TeldaIns::Nop => Vec::new(),
             TeldaIns::PushB(_) => vec![],
@@ -251,8 +247,8 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
 
     fn is_move_from(&self, from: &Reg) -> bool {
         match (self, from) {
-            (TeldaIns::AddB(_, R0b, f1), ByteReg(f2)) => f1 == f2,
-            (TeldaIns::AddW(_, R0, f1), WideReg(f2)) => f1 == f2,
+            (TeldaIns::OrB(_, R0b, f1), ByteReg(f2)) => f1 == f2,
+            (TeldaIns::OrW(_, R0, f1), WideReg(f2)) => f1 == f2,
             _ => false,
         }
     }
@@ -298,12 +294,7 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
             TeldaIns::String(_) |
             TeldaIns::Ref(_) |
             TeldaIns::Global(_) |
-            // TODO: fix this
-            TeldaIns::FunctionStartMarker |
-            TeldaIns::FunctionEndMarker |
-            TeldaIns::StaticMarker |
             TeldaIns::Comment(_) |
-            TeldaIns::Seg(_) |
             TeldaIns::Nop => (),
             TeldaIns::PushB(r) => *r = rename_byte(*r, rename_register),
             TeldaIns::PushW(r) => *r = rename_wide(*r, rename_register),
@@ -455,12 +446,7 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
             TeldaIns::String(_) |
             TeldaIns::Ref(_) |
             TeldaIns::Global(_) |
-            // TODO: fix this
-            TeldaIns::FunctionStartMarker |
-            TeldaIns::FunctionEndMarker |
-            TeldaIns::StaticMarker |
             TeldaIns::Comment(_) |
-            TeldaIns::Seg(_) |
             TeldaIns::Nop => (),
             TeldaIns::PushB(_) => (),
             TeldaIns::PushW(_) => (),

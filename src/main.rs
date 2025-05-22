@@ -3,7 +3,7 @@ use edd::{
     compile, flat::{passes::{const_prop_pass, dead_path_removal_pass, dead_removal_pass, Pass}, Program}, rt::{run, RuntimeError, Store, Value}, telda::{compile_to_telda, Options as TeldaOptions}, CompileOptions
 };
 
-use std::{fs::File, path::PathBuf};
+use std::{fs::File, io::BufWriter, path::PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Backend {
@@ -141,8 +141,7 @@ fn write_compiled_telda(program: Program, mut path: PathBuf, opt: TeldaOptions) 
     let telda = compile_to_telda(program, opt);
     path.set_extension("telda");
 
-    let mut file = File::create(path).unwrap();
-    for ins in telda {
-        writeln!(file, "{ins}").unwrap();
-    }
+    let file = File::create(path).unwrap();
+    let mut writer = BufWriter::new(file);
+    write!(writer, "{telda}").unwrap();
 }
