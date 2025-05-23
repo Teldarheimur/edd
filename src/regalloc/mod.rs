@@ -6,8 +6,8 @@ pub trait Ins<R, P, L> {
     /// Empty array means that the instruction is an endpoint (like return).
     fn following_labels(&self) -> Vec<Option<&L>>;
     fn label(&self) -> Option<&L>;
-    fn get_gen<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(&self, calling_convention: &CallingConvention<P, CRSL, CESL, RET, ARG>) -> Vec<R>;
-    fn get_kill<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(&self, calling_convention: &CallingConvention<P, CRSL, CESL, RET, ARG>) -> Vec<R>;
+    fn get_gen(&self, calling_convention: &CallingConvention<P>) -> Vec<R>;
+    fn get_kill(&self, calling_convention: &CallingConvention<P>) -> Vec<R>;
 
     fn is_return(&self) -> bool;
 
@@ -33,19 +33,19 @@ pub trait Register<S, P> {
 
 /// Static information about which registers and stack space is available
 #[derive(Debug, Clone)]
-pub struct CallingConvention<P, const CALLER_SAVE_LEN: usize, const CALLEE_SAVE_LEN: usize, const RETURN_VALUES: usize, const ARGUMENTS: usize> {
+pub struct CallingConvention<'a, P> {
     /// Register allocation will prefer to give out these first
-    pub caller_save: [P; CALLER_SAVE_LEN],
-    pub callee_save: [P; CALLEE_SAVE_LEN],
+    pub caller_save: &'a [P],
+    pub callee_save: &'a [P],
 
     /// Should be a subset of caller_save
-    pub return_values: [P; RETURN_VALUES],
+    pub return_values: &'a [P],
     /// Should be a subset of caller_save
-    pub arguments: [P; ARGUMENTS],
+    pub arguments: &'a [P],
 }
 
-impl<P: Copy, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize> CallingConvention<P, CRSL, CESL, RET, ARG> {
-    fn allocator(&self) -> AllocatorInstance<P, CRSL, CESL, RET, ARG> {
+impl<'a, P: Copy> CallingConvention<'a, P> {
+    fn allocator(&self) -> AllocatorInstance<P> {
         AllocatorInstance {
             regs_to_allocate: self.caller_save.iter().rev().copied().collect(),
             still_caller_save: true,
@@ -53,18 +53,20 @@ impl<P: Copy, const CRSL: usize, const CESL: usize, const RET: usize, const ARG:
             stack_offset: 0,
         }
     }
-    const COLOURS_AVAILABLE: usize = CRSL + CESL;
+    const fn colours_available(&self) -> usize {
+        self.caller_save.len() + self.callee_save.len()
+    }
 }
 
-struct AllocatorInstance<'a, P, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize> {
-    pub conv: &'a CallingConvention<P, CRSL, CESL, RET, ARG>,
+struct AllocatorInstance<'a, P> {
+    pub conv: &'a CallingConvention<'a, P>,
     still_caller_save: bool,
     regs_to_allocate: Vec<P>,
 
     stack_offset: usize,
 }
 
-impl<P: Copy, const A: usize, const B: usize, const C: usize, const D: usize> AllocatorInstance<'_, P, A, B, C, D> {
+impl<P: Copy> AllocatorInstance<'_, P> {
     fn next(&mut self) -> Option<P> {
         if let Some(reg) = self.regs_to_allocate.pop() {
             Some(reg)

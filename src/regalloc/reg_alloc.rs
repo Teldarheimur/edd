@@ -9,9 +9,9 @@ use super::{
 };
 
 // TODO: handle arguments and returns passed via stack better, so as to not store them twice in the stack
-pub fn register_allocate<L, I, R, S, P, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
+pub fn register_allocate<L, I, R, S, P>(
     body: &mut Vec<I>,
-    conv: &CallingConvention<P, CRSL, CESL, RET, ARG>,
+    conv: &CallingConvention<P>,
     argument_registers: &mut [R],
     return_value_registers: &mut [R],
 )
@@ -79,9 +79,9 @@ pub fn register_allocate<L, I, R, S, P, const CRSL: usize, const CESL: usize, co
     }
 }
 
-fn register_allocate_inner<L, R, P, I, S, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
+fn register_allocate_inner<L, R, P, I, S>(
     body: &mut Vec<I>,
-    alloc_ins: &mut AllocatorInstance<P, CRSL, CESL, RET, ARG>,
+    alloc_ins: &mut AllocatorInstance<P>,
 )
     where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, P: Copy + Eq + Hash, I: Ins<R, P, L>, S: Clone + Eq + Hash
 {
@@ -111,7 +111,7 @@ fn register_allocate_inner<L, R, P, I, S, const CRSL: usize, const CESL: usize, 
 
     let mut stack = Vec::new();
 
-    let limit = CallingConvention::<P, CRSL, CESL, RET, ARG>::COLOURS_AVAILABLE;
+    let limit = alloc_ins.conv.colours_available();
 
     loop {
         let node = if let Some((node, _)) = interference.iter().find(|(_, with)| with.len() < limit) {
@@ -257,10 +257,10 @@ fn rename_reads<P: Copy, R: Register<S, P> + Eq + Clone, S: Clone, L, I: Ins<R, 
     renamed
 }
 
-fn spill<P: Copy + Eq, R: Register<S, P> + Eq + Clone, L: Clone, I: Ins<R, P, L>, S: Hash + Eq + Clone, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
+fn spill<P: Copy + Eq, R: Register<S, P> + Eq + Clone, L: Clone, I: Ins<R, P, L>, S: Hash + Eq + Clone>(
     body: &mut Vec<I>,
     spilled: Vec<R>,
-    alloc_ins: &mut AllocatorInstance<P, CRSL, CESL, RET, ARG>,
+    alloc_ins: &mut AllocatorInstance<P>,
 ) {
     // rename register to itself
     let renames: Vec<_> = spilled

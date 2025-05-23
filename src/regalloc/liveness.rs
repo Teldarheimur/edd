@@ -9,9 +9,9 @@ pub type Kill<R> = Vec<SmallSet<R>>;
 pub type In<R> = Vec<SmallSet<R>>;
 pub type Out<R> = Vec<SmallSet<R>>;
 
-pub fn analysis<L: Hash + Eq + Clone, P, R: Eq + Clone, I: Ins<R, P, L>, const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
+pub fn analysis<L: Hash + Eq + Clone, P, R: Eq + Clone, I: Ins<R, P, L>>(
     lines: &[I],
-    conv: &CallingConvention<P, CRSL, CESL, RET, ARG>,
+    conv: &CallingConvention<P>,
 ) -> (Kill<R>, In<R>, Out<R>) {
     let len = lines.len();
 

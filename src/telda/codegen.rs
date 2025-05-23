@@ -641,13 +641,13 @@ fn generate_set_binop_rel(code: &mut Vec<Ins>, state: &mut FunctionState<'_>, r:
     code.push(Ins::Label(end_label));
 }
 
-fn generate_call<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(
+fn generate_call(
     code: &mut Vec<Ins>,
     state: &mut FunctionState<'_>,
     dest: Temp, t: FlatType,
     call_code: impl IntoIterator<Item = Ins>,
     arguments: Box<[Temp]>,
-    conv: &CallingConvention<Reg, CRSL, CESL, RET, ARG>,
+    conv: &CallingConvention<Reg>,
 ) {
     fn to_wide(reg: &Reg) -> Wr {
         match reg {

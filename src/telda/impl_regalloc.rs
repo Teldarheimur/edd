@@ -4,28 +4,28 @@ use crate::{regalloc::{CallingConvention, Ins, Register}, telda::{Br, Wr}};
 
 use super::{Ins as TeldaIns, Reg::{self, *}, Wi, Wr::*, Br::*};
 
-pub const CONV: CallingConvention<Reg, 5, 5, 1, 4> = CallingConvention {
-    caller_save: [
+pub const CONV: CallingConvention<Reg> = CallingConvention {
+    caller_save: &[
         WideReg(R1),
         WideReg(R6),
         WideReg(R7),
         WideReg(R8),
         WideReg(R9),
     ],
-    callee_save: [
+    callee_save: &[
         WideReg(R2),
         WideReg(R3),
         WideReg(R4),
         WideReg(R5),
         WideReg(R10),
     ],
-    arguments: [
+    arguments: &[
         WideReg(R6),
         WideReg(R7),
         WideReg(R8),
         WideReg(R9),
     ],
-    return_values: [
+    return_values: &[
         WideReg(R1),
     ]
 };
@@ -103,7 +103,7 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
         }
     }
 
-    fn get_gen<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(&self, conv: &CallingConvention<Reg, CRSL, CESL, RET, ARG>) -> Vec<Reg> {
+    fn get_gen(&self, conv: &CallingConvention<Reg>) -> Vec<Reg> {
         match *self {
             TeldaIns::Null |
             TeldaIns::Label(_) |
@@ -168,7 +168,7 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
         }
     }
 
-    fn get_kill<const CRSL: usize, const CESL: usize, const RET: usize, const ARG: usize>(&self, conv: &CallingConvention<Reg, CRSL, CESL, RET, ARG>) -> Vec<Reg> {
+    fn get_kill(&self, conv: &CallingConvention<Reg>) -> Vec<Reg> {
         match *self {
             TeldaIns::Null |
             TeldaIns::Label(_) |
