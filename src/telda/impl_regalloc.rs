@@ -24,9 +24,11 @@ pub const CONV: CallingConvention<Reg> = CallingConvention {
         WideReg(R7),
         WideReg(R8),
         WideReg(R9),
-    ],
+        ],
     return_values: &[
         WideReg(R1),
+        // non-standard right now!!
+        WideReg(R6),
     ]
 };
 
@@ -516,14 +518,14 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
 }
 
 #[track_caller]
-fn rename_byte<F: FnMut(Reg) -> Reg>(b: Br, mut rename_register: F) -> Br {
+fn rename_byte<F: FnOnce(Reg) -> Reg>(b: Br, rename_register: F) -> Br {
     match rename_register(ByteReg(b)) {
         ByteReg(b) => b,
         WideReg(r) => Br::try_from_wr(r).unwrap(),
     }
 }
 #[track_caller]
-fn rename_wide<F: FnMut(Reg) -> Reg>(w: Wr, mut rename_register: F) -> Wr {
+fn rename_wide<F: FnOnce(Reg) -> Reg>(w: Wr, rename_register: F) -> Wr {
     match rename_register(WideReg(w)) {
         WideReg(w) => w,
         ByteReg(r) => unreachable!("{r}"),

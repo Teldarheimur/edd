@@ -3,16 +3,26 @@ use std::{
     rc::Rc,
 };
 
+use spill_all::spill_alloc;
+
 use crate::{flat::{FlatType, Program as FlatProgram}, regalloc::{reg_alloc::register_allocate}};
 
 use self::{codegen::generate_program, Br::*, Wr::*};
 
 mod codegen;
 mod impl_regalloc;
+mod spill_all;
 
 #[derive(Default)]
+pub enum RegisterAllocator {
+    Skip,
+    #[default]
+    GraphColour,
+    SpillAll,
+}
+#[derive(Default)]
 pub struct Options {
-    pub dont_regalloc: bool,
+    pub regalloc: RegisterAllocator,
     pub dont_clean: bool,
     pub remove_comments: bool,
 }
@@ -22,8 +32,10 @@ pub fn compile_to_telda(program: FlatProgram, options: Options) -> Program {
 
     // pre-regalloc optimisations
     // register alloc
-    if !options.dont_regalloc {
-        apply_register_allocation(&mut program.fns);
+    match options.regalloc {
+        RegisterAllocator::Skip => (),
+        RegisterAllocator::GraphColour => apply_register_allocation(&mut program.fns),
+        RegisterAllocator::SpillAll => spill_alloc(&mut program.fns),
     }
     // run post-regalloc optimisations (remove zero-moves)
     if !options.dont_clean {

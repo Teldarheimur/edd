@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 use edd::{
-    compile, flat::{passes::{const_prop_pass, dead_path_removal_pass, dead_removal_pass, Pass}, Program}, rt::{run, RuntimeError, Store, Value}, telda::{compile_to_telda, Options as TeldaOptions}, CompileOptions
+    compile, flat::{passes::{const_prop_pass, dead_path_removal_pass, dead_removal_pass, Pass}, Program}, rt::{run, RuntimeError, Store, Value}, telda::{compile_to_telda, Options as TeldaOptions, RegisterAllocator}, CompileOptions
 };
 
 use std::{fs::File, io::BufWriter, path::PathBuf};
@@ -29,6 +29,9 @@ struct Args {
     /// Emit telda code without register allocation
     dont_regalloc: bool,
     #[arg(long)]
+    /// Allocate all temporaries in the stack
+    spill_all: bool,
+    #[arg(long)]
     /// Removed out-commented lines from telda code
     dont_emit_comments: bool,
 
@@ -56,6 +59,7 @@ fn main() {
         emit_flat,
         dont_regalloc,
         dont_emit_comments,
+        spill_all,
         optimised,
         backend,
         path,
@@ -101,10 +105,14 @@ fn main() {
             }
         Backend::Telda => {
             let mut opt = TeldaOptions::default();
+            if spill_all {
+                opt.regalloc = RegisterAllocator::SpillAll;
+            }
             if dont_regalloc {
-                opt.dont_regalloc = true;
+                opt.regalloc = RegisterAllocator::Skip;
                 opt.dont_clean = true;
             }
+
             if dont_emit_comments {
                 opt.remove_comments = true;
             }
