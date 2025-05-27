@@ -46,12 +46,13 @@ pub struct CallingConvention<'a, P> {
 
 impl<'a, P: Copy> CallingConvention<'a, P> {
     fn allocator(&self) -> AllocatorInstance<P> {
-        AllocatorInstance {
-            regs_to_allocate: self.caller_save.iter().rev().copied().collect(),
-            still_caller_save: true,
+        let mut alloc = AllocatorInstance {
+            regs_to_allocate: Vec::new(),
             conv: self,
             stack_offset: 0,
-        }
+        };
+        alloc.unallocate_regs();
+        alloc
     }
     const fn colours_available(&self) -> usize {
         self.caller_save.len() + self.callee_save.len()
@@ -60,25 +61,32 @@ impl<'a, P: Copy> CallingConvention<'a, P> {
 
 struct AllocatorInstance<'a, P> {
     pub conv: &'a CallingConvention<'a, P>,
-    still_caller_save: bool,
     regs_to_allocate: Vec<P>,
 
     stack_offset: usize,
 }
 
+impl<P: Copy + PartialEq> AllocatorInstance<'_, P> {
+    #[must_use]
+    fn remove(&mut self, p: P) -> bool {
+        if let Some(i) = self.regs_to_allocate.iter().position(|r| *r == p) {
+            self.regs_to_allocate.remove(i);
+            true
+        } else {
+            false
+        }
+    }
+    fn regs_to_save(&self) -> Vec<P> {
+        self.conv.callee_save
+            .iter()
+            .copied()
+            .filter(|r| !self.regs_to_allocate.contains(r))
+            .collect()
+    }
+}
 impl<P: Copy> AllocatorInstance<'_, P> {
     fn next(&mut self) -> Option<P> {
-        if let Some(reg) = self.regs_to_allocate.pop() {
-            Some(reg)
-        } else {
-            // if the registers in the stack were not caller save registers, we're
-            if !self.still_caller_save {
-                return None;
-            }
-            self.still_caller_save = false;
-            self.regs_to_allocate = self.conv.callee_save.iter().rev().copied().collect();
-            self.next()
-        }
+        self.regs_to_allocate.pop()
     }
     fn new_stack_offset(&mut self) -> usize {
         let so = self.stack_offset;
@@ -86,17 +94,11 @@ impl<P: Copy> AllocatorInstance<'_, P> {
         so
     }
     fn unallocate_regs(&mut self) -> &mut Self {
-        self.regs_to_allocate = self.conv.caller_save.iter().rev().copied().collect();
-        self.still_caller_save = true;
+        let callee = self.conv.callee_save.iter().rev().copied();
+        let caller = self.conv.caller_save.iter().rev().copied();
+
+        self.regs_to_allocate = callee.chain(caller).collect();
 
         self
-    }
-    fn regs_to_save(&self) -> Vec<P> {
-        if self.still_caller_save {
-            return Vec::new();
-        }
-
-        let len = self.conv.callee_save.len() - self.regs_to_allocate.len();
-        self.conv.callee_save[..len].to_vec()
     }
 }

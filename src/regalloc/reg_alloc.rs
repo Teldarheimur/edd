@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 use std::hash::Hash;
 
 use crate::small_set::SmallSet;
@@ -15,9 +15,7 @@ pub fn register_allocate<L, I, R, S, P>(
     argument_registers: &mut [R],
     return_value_registers: &mut [R],
 )
-    where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, I: Ins<R, P, L>
-    + Display
-    , P: Copy + Eq + Hash, S: Clone + Eq + Hash
+    where L: Hash + Eq + Clone, R: Register<S, P> + Clone + Eq + Hash, I: Ins<R, P, L>, P: Copy + Eq + Hash, S: Clone + Eq + Hash
 {
     let mut alloc_ins = conv.allocator();
     {
@@ -69,8 +67,8 @@ pub fn register_allocate<L, I, R, S, P>(
         let return_instructions: Vec<_> = body
             .iter()
             .enumerate()
-            .filter_map(|(i, ins)| ins.is_return().then_some(i))
             .rev()
+            .filter_map(|(i, ins)| ins.is_return().then_some(i))
             .collect();
 
         for ri in return_instructions {
@@ -114,13 +112,8 @@ fn register_allocate_inner<L, R, P, I, S>(
     let limit = alloc_ins.conv.colours_available();
 
     loop {
-        let node = if let Some((node, _)) = interference.iter().find(|(_, with)| with.len() < limit) {
-            node.clone()
-        } else {
-            let Some(key) = interference.keys().next() else {
-                break;
-            };
-            key.clone()
+        let Some(node) = select_best(&interference, limit) else {
+            break
         };
 
         let (reg, neighbours) = interference.remove_entry(&node).unwrap();
@@ -143,6 +136,10 @@ fn register_allocate_inner<L, R, P, I, S>(
     'outer: for (reg, neighbours) in stack.into_iter().rev() {
         // If the register is numbered, it's already coloured
         if let Some(&n) = reg.as_physical() {
+            // remove physical registers 
+            if alloc_ins.remove(n) {
+                used_colours.push(n);
+            }
             colouring.insert(reg, n);
             continue;
         }
@@ -196,6 +193,29 @@ fn register_allocate_inner<L, R, P, I, S>(
         spill(body, spilled, alloc_ins);
         register_allocate_inner(body, alloc_ins.unallocate_regs())
     }
+}
+
+fn select_best<R, P, S>(
+    interference: &HashMap<R, SmallSet<R>>,
+    limit: usize,
+) -> Option<R>
+    where R: Register<S, P> + Clone + Eq + Hash, P: Copy + Eq + Hash, S: Clone + Eq + Hash
+{
+    let mut symbolic = None;
+    let mut last = None;
+    for (r, set) in interference {
+        last = Some(r);
+        if r.as_symbolic().is_some() {
+            symbolic = Some(r);
+        }
+        // if it's got a big interefence, we wanna send it off earlier than the others
+        // so that it gets assigned a colour the latest
+        if set.len() > limit {
+            return symbolic.cloned();
+        }
+    }
+    // Prefer symbolic registers first, so they get assigned after the physical (self-assigned) registers
+    symbolic.or(last).cloned()
 }
 
 fn rename<R: Register<S, P>, S: Clone, P: Copy>(from: R, to: R, i: usize) -> R {
