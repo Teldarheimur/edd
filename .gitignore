@@ -1,5 +1,6 @@
 /.vscode
 /target
+/bin
 tests/*.telda
 tests/*.to
 tests/*.tb

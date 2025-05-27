@@ -5,6 +5,7 @@ fn fibo(n: u32) u32 {
     else fibo(n - 1) + fibo(n - 2)
 }
 
+export
 fn main() unit {
     let n = 30;
     putu32(fibo(n));
