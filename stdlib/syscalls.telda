@@ -1,0 +1,31 @@
+.global sysread
+.global syswrite
+.global syserrhandler
+
+sysread:
+    push r3
+    push r4
+    or r3, r0, r6
+    or r4, r0, r7
+    ldi r1, 3
+    syscall
+    pop r4
+    pop r3
+    ret
+syswrite:
+    push r3
+    push r4
+    or r3, r0, r6
+    or r4, r0, r7
+    ldi r1, 4
+    syscall
+    pop r4
+    pop r3
+    ret
+syserrhandler:
+    push r2
+    or r2, r0, r6
+    ldi r1, 15
+    syscall
+    pop r2
+    ret

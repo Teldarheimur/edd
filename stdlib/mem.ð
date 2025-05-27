@@ -1,0 +1,20 @@
+export fn mem_zero(data: [&]u8) unit {
+  if data.len > 0: {
+    data[0] = 0;
+    zero(data[1:]);
+  }
+}
+
+export fn mem_set(data: [&]u8, c: u8) unit {
+  if data.len > 0: {
+    data[0] = c;
+    zero(data[1:]);
+  }
+}
+
+export fn mem_copy(dest: [*]u8, src: [*]u8, length: u16) unit {
+  if length > 0: {
+    dest[0] = src[0];
+    mem_copy(dest[1:], src[1:], length - 1);
+  }
+}

@@ -1,0 +1,7 @@
+extern i16 main();
+
+export fn _start() {
+    // TODO set up handlers
+    let ret = main();
+    exit(ret);
+}

@@ -1,0 +1,16 @@
+// io
+extern fn puts(s: [&]byte) unit;
+extern fn puti32(n: i32) unit;
+extern fn putu32(n: u32) unit;
+extern fn puti16(n: i16) unit;
+extern fn putu16(n: u16) unit;
+extern fn puti8 (n: i8 ) unit;
+extern fn putu8 (n: u8 ) unit;
+
+// mem
+extern fn mem_zero(data: [&]u8) unit;
+extern fn mem_set(data: [&]u8, c: u8) unit;
+extern fn mem_copy(dest: [*]u8, src: [*]u8, length: u16) unit;
+
+// str
+extern fn strcmp(s1: [&]u8, s2: [&]u8) i8;

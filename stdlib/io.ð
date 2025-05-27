@@ -1,0 +1,27 @@
+fn puts(s: [&]byte) unit {
+
+}
+fn puti32(n: i32) unit {
+
+}
+fn putu32(n: u32) unit {
+
+}
+fn puti16(n: i16) unit {
+
+}
+fn putu16(n: u16) unit {
+
+}
+fn puti8 (n: i8 ) unit {
+
+}
+fn putu8 (n: u8 ) unit {
+
+}
+
+// GLOBAL  _write     = 0x0080 in text
+// GLOBAL  _print     = 0x009d in text
+// GLOBAL  _readLine  = 0x00b9 in text
+// GLOBAL  _readN     = 0x00db in text
+// GLOBAL  _readNLine = 0x00fa in text

@@ -1,0 +1,13 @@
+include("include.ðs");
+
+struct Location {
+    line_start: u16,
+    col_start: u16,
+    line_end: u16,
+    col_end: u16,
+    source: [&]u8,
+}
+
+export fn panic(location: *Location, msg: [&]u8) {
+    // todo: do this
+}

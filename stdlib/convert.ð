@@ -1,0 +1,3 @@
+  GLOBAL  _uitos = 0x0095 in text
+  GLOBAL  _sitos = 0x0080 in text
+  GLOBAL  _parse = 0x00ca in text
