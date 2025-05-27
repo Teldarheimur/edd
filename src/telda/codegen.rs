@@ -637,7 +637,8 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                     Ins::LdiW(Wr::R6, Wi::Symbol(location_label)),
                     Ins::LdiW(Wr::R7, Wi::Symbol(message_label)),
                     Ins::LdiW(Wr::R8, Wi::Constant(message_length)),
-                    Ins::Call(Wi::Symbol(state.get_panic()))
+                    Ins::Call(Wi::Symbol(state.get_panic())),
+                    Ins::Null,
                 ]);
             }
         }
