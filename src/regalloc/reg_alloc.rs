@@ -201,21 +201,25 @@ fn select_best<R, P, S>(
 ) -> Option<R>
     where R: Register<S, P> + Clone + Eq + Hash, P: Copy + Eq + Hash, S: Clone + Eq + Hash
 {
-    let mut symbolic = None;
+    let mut biggest_symbolic = None;
+    let mut last_size = 0;
     let mut last = None;
     for (r, set) in interference {
         last = Some(r);
         if r.as_symbolic().is_some() {
-            symbolic = Some(r);
-        }
-        // if it's got a big interefence, we wanna send it off earlier than the others
-        // so that it gets assigned a colour the latest
-        if set.len() > limit {
-            return symbolic.cloned();
+            if set.len() > last_size {
+                biggest_symbolic = Some(r);
+                last_size = set.len();
+            }
+            // if it's got a big interefence, we wanna send it off earlier than the others
+            // so that it gets assigned a colour the latest
+            if last_size > limit {
+                return biggest_symbolic.cloned();
+            }
         }
     }
     // Prefer symbolic registers first, so they get assigned after the physical (self-assigned) registers
-    symbolic.or(last).cloned()
+    biggest_symbolic.or(last).cloned()
 }
 
 fn rename<R: Register<S, P>, S: Clone, P: Copy>(from: R, to: R, i: usize) -> R {
