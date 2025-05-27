@@ -2,7 +2,7 @@ use std::{
     cmp::Ordering, collections::BTreeMap, fmt::{self, Display}, iter, ops::Add, rc::Rc
 };
 
-use crate::flat::{Binop, Const, FlatType, Global, Label, Line, Program, StackVar, StaticDecl, Temp, Unop};
+use crate::{flat::{Binop, Const, FlatType, Global, Label, Line, Program, StackVar, StaticDecl, Temp, Unop}, parse::location::Location};
 
 mod value_impl;
 mod store;
@@ -12,7 +12,7 @@ use store::{StackOffset, StackSpace};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RuntimeError {
-    Panic(Box<str>),
+    Panic(Location, Box<str>),
     InvalidMain,
 }
 
@@ -351,8 +351,8 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
 
                 state.set_temp(dest.clone(), val);
             }
-            Line::Panic(msg) => {
-                return Err(RuntimeError::Panic(msg.clone()));
+            Line::Panic(loc, msg) => {
+                return Err(RuntimeError::Panic(loc.clone(), msg.clone()));
             }
             Line::Ret(name) => {
                 break Ok(state.read_reg(name.clone()));

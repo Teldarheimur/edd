@@ -95,7 +95,7 @@ fn mark_fns(fns: &HashMap<Global, Function>, symtab: &mut Symtab) {
                 Line::If(_, _, _) |
                 Line::Goto(_) |
                 Line::Ret(_) |
-                Line::Panic(_) |
+                Line::Panic(_, _) |
                 Line::StackAlloc(_, _) |
                 Line::StackFree(_) |
                 Line::StackRead(_, _, _, _) |
@@ -117,7 +117,7 @@ fn remove_unused_locals(program: &mut Program) {
                 Line::StackAlloc(_, _) |
                 Line::StackFree(_) |
                 Line::Goto(_) |
-                Line::Panic(_) |
+                Line::Panic(_, _) |
                 Line::Label(_) => (),
                 &Line::ReadGlobal(Temp(i), _, _) |
                 &Line::SetAddrOfGlobal(Temp(i), _, _) |
@@ -221,7 +221,7 @@ fn remove_unused_locals(program: &mut Program) {
                 Line::StackAlloc(_, _) |
                 Line::Label(_) |
                 Line::Goto(_) |
-                Line::Panic(_) => ()
+                Line::Panic(_, _) => ()
             }
         }
 

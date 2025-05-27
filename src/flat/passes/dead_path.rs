@@ -34,7 +34,7 @@ pub fn dead_path_removal_pass(mut program: Program) -> Program {
                         break 'inner;
                     }
                     Line::Ret(_) => break 'inner,
-                    Line::Panic(_) => break 'inner,
+                    Line::Panic(_, _) => break 'inner,
                     _ => (),
                 }
                 i += 1;

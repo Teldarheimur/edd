@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::ttype::ast::{Decl, Program as TypedProgram};
+use crate::{parse::location::Location, ttype::ast::{Decl, Program as TypedProgram}};
 
 mod flat_codegen;
 mod impls;
@@ -200,7 +200,7 @@ pub enum Line {
     Goto(Label),
     Ret(Temp),
 
-    Panic(Box<str>),
+    Panic(Location, Box<str>),
 }
 impl Line {
     #[allow(non_snake_case)]

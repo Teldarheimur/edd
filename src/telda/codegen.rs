@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, iter::once, rc::Rc};
+use std::{collections::{btree_map::Entry, BTreeMap}, iter::once, rc::Rc};
 
 use crate::{flat::{
     Binop, Const, FlatType, Label, Line, Program as FlatProgram, StaticDecl, Temp, Unop,
@@ -9,8 +9,11 @@ use super::{impl_regalloc::CONV, Bi, Br::{self, *}, Function, Ins, Program, Reg,
 #[derive(Debug, Clone, Default)]
 struct ObjectState {
     call_reg_symbol: Option<Rc<str>>,
+    panic_symbol: Option<Rc<str>>,
     counter: usize,
     labels: BTreeMap<Label, Rc<str>>,
+    /// string to label mapping
+    string_bank: BTreeMap<Box<str>, Rc<str>>,
 }
 impl ObjectState {
     fn new_label(&mut self) -> Rc<str> {
@@ -26,7 +29,17 @@ impl ObjectState {
             .or_insert_with(|| Self::inner_new_label(&mut self.counter))
             .clone()
     }
-    /// Getting this symbol sets a flag the function
+    fn get_string_label(&mut self, s: Box<str>) -> Result<Rc<str>, Rc<str>> {
+        match self.string_bank.entry(s) {
+            Entry::Vacant(v) => {
+                Err(v.insert(Self::inner_new_label(&mut self.counter)).clone())
+            }
+            Entry::Occupied(o) => {
+                Ok(o.get().clone())
+            }
+        }
+    }
+    /// Getting this symbol sets a flag to generate the function
     fn get_call_reg(&mut self) -> Rc<str> {
         if let Some(glbl) = self.call_reg_symbol.clone() {
             return glbl;
@@ -36,12 +49,23 @@ impl ObjectState {
         self.call_reg_symbol = Some(new_label.clone());
         new_label
     }
+    /// Getting this symbol sets a flag to look for a panic handler
+    fn get_panic(&mut self) -> Rc<str> {
+        if let Some(glbl) = self.panic_symbol.clone() {
+            return glbl;
+        }
+
+        let new_label: Rc<str> = "panic".into();
+        self.panic_symbol = Some(new_label.clone());
+        new_label
+    }
 }
 #[derive(Debug)]
 struct FunctionState<'a> {
     pseudo_counter: usize,
     temps: BTreeMap<Temp, Box<[Reg]>>,
     global_state: &'a mut ObjectState,
+    data: Vec<Ins>,
 }
 impl<'a> FunctionState<'a> {
     fn new(global_state: &'a mut ObjectState) -> Self {
@@ -52,6 +76,7 @@ impl<'a> FunctionState<'a> {
             pseudo_counter: 0,
             temps,
             global_state,
+            data: Vec::new(),
         }
     }
     fn new_byte_reg(&mut self) -> Br {
@@ -157,6 +182,26 @@ impl<'a> FunctionState<'a> {
     fn new_label(&mut self) -> Rc<str> {
         self.global_state.new_label()
     }
+    fn get_string_label(&mut self, s: Box<str>) -> Rc<str> {
+        let data = s.clone();
+        match self.global_state.get_string_label(s) {
+            Err(l) => {
+                self.data.extend([
+                    Ins::Label(l.clone()),
+                    Ins::String(data)
+                ]);
+                l
+            }
+            Ok(l) => l,
+        }
+    }
+    fn get_panic(&mut self) -> Rc<str> {
+        self.global_state.get_panic()
+    }
+    fn into_extra_data(self) -> Vec<Ins> {
+        self.data
+    }
+    
 }
 
 const fn split_u32(dw: u32) -> (u16, u16) {
@@ -171,7 +216,6 @@ pub fn generate_program(program: FlatProgram) -> Program {
     for decl in program.statics {
         generate_decl(decl, &mut data);
     }
-    let data = data;
 
     let mut fns = Vec::new();
     let mut state = ObjectState::default();
@@ -189,11 +233,14 @@ pub fn generate_program(program: FlatProgram) -> Program {
 
         let mut code = Vec::new();
         generate_fn(&mut code, &mut state, f.lines, &rets);
+        data.extend(state.into_extra_data());
 
         fns.push(Function { name, global: f.export, code, args, rets });
     }
     let ObjectState {
         call_reg_symbol,
+        panic_symbol,
+        string_bank: _,
         counter: _,
         labels: _,
     } = state;
@@ -206,6 +253,15 @@ pub fn generate_program(program: FlatProgram) -> Program {
             Ins::Label(call_reg),
             Ins::JmpR(Wr::Rf),
         ]);
+    }
+    if let Some(panic) = panic_symbol {
+        if fns.iter().any(|f| f.name == panic) {
+            // do nothing because a custom panic handler is set
+        } else {
+            // set a reference to an external panic handler
+            // TODO: generate a panic handler instead
+            extra_text.push(Ins::Ref(panic));
+        }
     }
 
     Program { data, fns, extra_text }
@@ -560,9 +616,29 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                 // TODO: put the right value here to clean up objects stored in stack-space
                 code.push(Ins::Ret(Bi::Constant(0)));
             }
-            Line::Panic(_) => {
-                // TODO: print the error message
-                code.push(Ins::Null);
+            Line::Panic(loc, msg) => {
+                let message_length = msg.len() as u16;
+                let message_label = state.get_string_label(msg);
+                let source_file = loc.source_file.display().to_string().into_boxed_str();
+                let source_file_len = source_file.len() as u16;
+                let source_file_label = state.get_string_label(source_file);
+
+                let location_label = state.new_label();
+                state.data.extend([
+                    Ins::Label(location_label.clone()),
+                    Ins::Wide(Wi::Constant(loc.line_start)),
+                    Ins::Wide(Wi::Constant(loc.col_start)),
+                    Ins::Wide(Wi::Constant(loc.line_end)),
+                    Ins::Wide(Wi::Constant(loc.col_end)),
+                    Ins::Wide(Wi::Symbol(source_file_label)),
+                    Ins::Wide(Wi::Constant(source_file_len)),
+                ]);
+                code.extend([
+                    Ins::LdiW(Wr::R6, Wi::Symbol(location_label)),
+                    Ins::LdiW(Wr::R7, Wi::Symbol(message_label)),
+                    Ins::LdiW(Wr::R8, Wi::Constant(message_length)),
+                    Ins::Call(Wi::Symbol(state.get_panic()))
+                ]);
             }
         }
     }

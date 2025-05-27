@@ -4,6 +4,7 @@ fn calculate(x: i16, y: i16) i16 {
     (x + y * (x - y)) / y
 }
 
+export
 fn main() unit {
     puti16(calculate(4, 2));
     puti16(calculate(-7, 4));

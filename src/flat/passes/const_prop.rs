@@ -221,7 +221,7 @@ pub fn const_prop_pass(mut program: Program) -> Program {
                 // TODO: don't just stop in panic as soon as any control flow pops up
                 Line::Label(_) => break,
                 Line::Ret(_) => break,
-                Line::Panic(_) => break,
+                Line::Panic(_, _) => break,
             }
         }
     }

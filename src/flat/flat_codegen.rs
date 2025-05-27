@@ -240,7 +240,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
 
             state.add_code(Line::If(is_zero, error_l.clone(), safe_l.clone()));
             state.add_code(Line::Label(error_l));
-            state.add_code(Line::Panic(format!("{loc}: divended was zero").into()));
+            state.add_code(Line::Panic(loc, "divended was zero".into()));
             state.add_code(Line::Label(safe_l));
             state.add_code(Line::SetBinop(place, t, Binop::Div, ta, tb));
         }
@@ -279,7 +279,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
                 let if_out_of_bounds = state.new_label();
                 state.add_code(Line::If(in_bounds, if_inbounds.clone(), if_out_of_bounds.clone()));
                 state.add_code(Line::Label(if_out_of_bounds));
-                state.add_code(Line::Panic(format!("{loc}: index out of bounds").into()));
+                state.add_code(Line::Panic(loc, "index out of bounds".into()));
                 state.add_code(Line::Label(if_inbounds));
             }
 
@@ -343,7 +343,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
                 }
             }
             state.add_code(Line::Label(out_of_bounds_l));
-            state.add_code(Line::Panic(format!("{loc}: index out of bounds").into()));
+            state.add_code(Line::Panic(loc, "index out of bounds".into()));
             state.add_code(Line::Label(all_checks_done));
 
             let ptr = state.new_temp("new_slice_ptr", ptr_t.clone());
@@ -573,7 +573,7 @@ fn flatten_block(
                 flatten_expr(e, t.clone(), place_val.clone(), state);
                 state.add_code(Line::WriteToAddr(place_ptr, Temp::ZERO, t, place_val))
             }
-            Statement::Assign(loc, PlaceExpr::Element(_, slice_e, element_t, ind), e) => {
+            Statement::Assign(_, PlaceExpr::Element(loc, slice_e, element_t, ind), e) => {
                 let element_t = flatten_type(*element_t);
 
                 let slice_t = FlatType::slice(element_t.clone());
@@ -596,7 +596,7 @@ fn flatten_block(
                     let if_out_of_bounds = state.new_label();
                     state.add_code(Line::If(in_bounds, if_inbounds.clone(), if_out_of_bounds.clone()));
                     state.add_code(Line::Label(if_out_of_bounds));
-                    state.add_code(Line::Panic(format!("{loc}: index out of bounds").into()));
+                    state.add_code(Line::Panic(loc, "index out of bounds".into()));
                     state.add_code(Line::Label(if_inbounds));
                 }
 

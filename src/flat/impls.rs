@@ -332,7 +332,7 @@ impl Display for DisplayLine<'_> {
             Line::StackRead(t1, t, sv, t2) => {
                 write!(f, "{} = {t} @STACK[{} + {}]", t1.display_with(locals), sv.display_with(stacks), t2.display_with(locals))
             }
-            Line::Panic(msg) => write!(f, "@PANIC({msg})"),
+            Line::Panic(loc, msg) => write!(f, "@PANIC({loc}, {msg})"),
         }
     }
 }
