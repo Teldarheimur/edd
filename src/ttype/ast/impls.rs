@@ -158,9 +158,9 @@ impl Display for Expr {
             Expr::Neg(_, a) => write!(f, "-{a}"),
             Expr::FieldAccess(_, sl, field) => write!(f, "{sl}.{field}"),
             Expr::Element(_, s, i) => write!(f, "{s}[{i}]"),
-            Expr::SliceOfArray(_, a) => match a {
-                Ok(e) => write!(f, "@slice({e})"),
-                Err(e) => write!(f, "@slice({e})"),
+            Expr::SliceOfArray(_, t, len, a) => match a {
+                Ok(e) => write!(f, "@slice<{t}, {len}>({e})"),
+                Err(e) => write!(f, "@slice<{t}, {len}>({e})"),
             },
             Expr::Slice(_, a, from, SliceEndIndex::Incl(to)) => write!(f, "{a}[{from}:={to}]"),
             Expr::Slice(_, a, from, SliceEndIndex::Excl(to)) => write!(f, "{a}[{from}:<{to}]"),

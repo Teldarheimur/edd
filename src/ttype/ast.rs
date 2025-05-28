@@ -83,8 +83,8 @@ pub enum Expr {
 
     /// Optain element of slice at index
     Element(Location, Box<Self>, Box<Self>),
-    /// Make a slice from the given array
-    SliceOfArray(Location, Result<PlaceExpr, Box<Self>>),
+    /// Make a slice from the given array, second field is the type of the array element and third is its length
+    SliceOfArray(Location, Box<Type>, u16, Result<PlaceExpr, Box<Self>>),
     /// Make a slice from a slice with the given index range
     Slice(Location, Box<Self>, Box<Self>, SliceEndIndex<Box<Self>>),
     FieldAccess(Location, Box<Expr>, Rc<str>),
@@ -128,7 +128,7 @@ impl Expr {
             | Expr::Not(loc, _)
             | Expr::Neg(loc, _)
             | Expr::Element(loc, _, _)
-            | Expr::SliceOfArray(loc, _)
+            | Expr::SliceOfArray(loc, _, _, _)
             | Expr::Slice(loc, _, _, _)
             | Expr::FieldAccess(loc, _, _)
             | Expr::Deref(loc, _)

@@ -113,7 +113,7 @@ impl<'a> FlattenState<'a> {
     }
     pub fn new_global(&mut self, purpose: &str) -> Global {
         let n = self.global_ticker.tick();
-        Global(format!("#g@{}${purpose}{n}", self.fn_name).into())
+        Global(format!("g@{}${purpose}{n}", self.fn_name).into())
     }
     pub fn set_temp_type(&mut self, temp: Temp, t: FlatType) {
         if self.temp_types.len() <= temp.inner() {

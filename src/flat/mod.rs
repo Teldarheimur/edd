@@ -115,7 +115,7 @@ pub enum FlatType {
 }
 
 impl FlatType {
-    pub fn bptr(t: Box<Self>) -> Self {
+    pub(crate) fn bptr(t: Box<Self>) -> Self {
         Self::Ptr(Some(t))
     }
     pub fn ptr(t: Self) -> Self {
@@ -132,6 +132,12 @@ impl FlatType {
             FlatType::ptr(t),
             FlatType::U16,
         ]))
+    }
+    pub fn is_array_of(&self, t: &Self, len: u16) -> bool {
+        match self {
+            Self::Arr(ot, ol) => &**ot == t && *ol == len,
+            _ => false,
+        }
     }
 }
 

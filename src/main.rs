@@ -227,8 +227,8 @@ fn link(assembled: Vec<u8>, mut path: PathBuf, output: Option<PathBuf>) -> Resul
 
     let output = Command::new(TELDA_LINKER)
         .arg("-e")
-        .arg("-E")
-        .arg("start")
+        // link to stdlib
+        .arg("-lstd.savn")
         .arg("-o")
         .arg(path)
         .arg(f.path())

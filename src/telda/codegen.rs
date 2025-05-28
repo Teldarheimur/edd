@@ -268,7 +268,6 @@ pub fn generate_program(program: FlatProgram) -> Program {
 }
 
 fn generate_decl(decl: StaticDecl, code: &mut Vec<Ins>) {
-    // code.push(Ins::StaticMarker);
     match decl {
         StaticDecl::SetConst(g, _, c) => {
             code.push(Ins::Label(g.into_inner()));
@@ -532,7 +531,6 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                 };
                 generate_call(code, state, dest, t, call_code, arguments, &CONV);
             }
-            Line::SetStruct(_, _, _) => todo!(),
             Line::SetFieldOfTemp(_, _, _, _) => todo!(),
             Line::WriteToAddr(_, _, _, _) => todo!(),
             Line::ReadFromAddr(_, _, _, _) => todo!(),
@@ -540,8 +538,32 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
             Line::StackFree(_) => todo!(),
             Line::StackWrite(_, _, _) => todo!(),
             Line::StackRead(_, _, _, _) => todo!(),
-            Line::SetAddrOfGlobal(_, _, _) => todo!(),
             Line::SetAddrOfStackVar(_, _, _) => todo!(),
+            Line::SetStruct(dest, t, srcs) => {
+                let dest_regs: Vec<_> = state.get(&dest, Some(&t)).to_vec();
+                let src_regs = match t {
+                    FlatType::Struct(ts) => {
+                        ts.into_iter().zip(srcs)
+                            .fold(Vec::new(), |mut v, (t, src)| {
+                                v.extend(state.get(&src, Some(&t)).iter().copied());
+                                v
+                            })
+                    },
+                    _ => unreachable!(),
+                };
+
+                for (dest, src) in dest_regs.into_iter().zip(src_regs) {
+                    match (dest, src) {
+                        (Reg::ByteReg(dest), Reg::ByteReg(src)) => code.push(Ins::MoveB(dest, src)),
+                        (Reg::WideReg(dest), Reg::WideReg(src)) => code.push(Ins::MoveW(dest, src)),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            Line::SetAddrOfGlobal(dest, _, glbl) => {
+                let dest = state.get_wide(&dest);
+                code.push(Ins::LdiW(dest, Wi::Symbol(glbl.inner().clone())));
+            }
             Line::ReadGlobal(dest, t, glbl) => {
                 let offset = state.new_wide_reg();
                 let one = state.new_wide_reg();
@@ -619,24 +641,15 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
             Line::Panic(loc, msg) => {
                 let message_length = msg.len() as u16;
                 let message_label = state.get_string_label(msg);
-                let source_file = loc.source_file.display().to_string().into_boxed_str();
-                let source_file_len = source_file.len() as u16;
-                let source_file_label = state.get_string_label(source_file);
+                let source = loc.to_string().into_boxed_str();
+                let source_length = source.len() as u16;
+                let source_label = state.get_string_label(source);
 
-                let location_label = state.new_label();
-                state.data.extend([
-                    Ins::Label(location_label.clone()),
-                    Ins::Wide(Wi::Constant(loc.line_start)),
-                    Ins::Wide(Wi::Constant(loc.col_start)),
-                    Ins::Wide(Wi::Constant(loc.line_end)),
-                    Ins::Wide(Wi::Constant(loc.col_end)),
-                    Ins::Wide(Wi::Symbol(source_file_label)),
-                    Ins::Wide(Wi::Constant(source_file_len)),
-                ]);
                 code.extend([
-                    Ins::LdiW(Wr::R6, Wi::Symbol(location_label)),
-                    Ins::LdiW(Wr::R7, Wi::Symbol(message_label)),
-                    Ins::LdiW(Wr::R8, Wi::Constant(message_length)),
+                    Ins::LdiW(Wr::R6, Wi::Symbol(source_label)),
+                    Ins::LdiW(Wr::R7, Wi::Constant(source_length)),
+                    Ins::LdiW(Wr::R8, Wi::Symbol(message_label)),
+                    Ins::LdiW(Wr::R9, Wi::Constant(message_length)),
                     Ins::Call(Wi::Symbol(state.get_panic())),
                     Ins::Null,
                 ]);

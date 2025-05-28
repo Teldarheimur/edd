@@ -247,6 +247,12 @@ fn check_literal(loc: Location, lit: &UntypedLiteral) -> (Type, Expr) {
 }
 
 fn check_expr_as(expr: &UntypedExpr, state: &SymbolTable, expected_type: &Type) -> Result<Expr> {
+    if let Type::Slice(expected_inner_t) = expected_type {
+        match check_indexable_expr(expr, state) {
+            Ok((e, t)) if **expected_inner_t == *t => return Ok(e),
+            _ => (),
+        }
+    }
     let (t, e) = check_expr(expr, state)?;
     let loc = e.location();
     let unified_type = unify_types(&loc, expected_type, &t)?;
@@ -487,20 +493,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             let args: Vec<_> = args
                 .iter()
                 .zip(t_args.iter().cloned())
-                .map(|(e, ta)| {
-                    let (t, e) = check_expr(e, state)?;
-                    let at = unify_types(loc, &ta, &t)?;
-                    if at != t {
-                        Ok(Expr::Cast(
-                            loc.clone(),
-                            Box::new(e),
-                            Box::new(t),
-                            Box::new(at),
-                        ))
-                    } else {
-                        Ok(e)
-                    }
-                })
+                .map(|(expr, exp_t)| check_expr_as(expr, state, &exp_t))
                 .collect_result()?;
 
             Ok((
@@ -549,20 +542,7 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
             let element_type = Type::any();
             let exprs: Vec<_> = exprs
                 .iter()
-                .map(|e| {
-                    let (t, e) = check_expr(e, state)?;
-                    let at = unify_types(loc, &element_type, &t)?;
-                    if at != t {
-                        Ok(Expr::Cast(
-                            loc.clone(),
-                            Box::new(e),
-                            Box::new(t),
-                            Box::new(at),
-                        ))
-                    } else {
-                        Ok(e)
-                    }
-                })
+                .map(|expr| check_expr_as(expr, state, &element_type))
                 .collect_result()?;
             let arr_type = Type::Array(Box::new(element_type.clone()), exprs.len() as u16);
             Ok((arr_type, Expr::Array(loc.clone(), Box::new(element_type), exprs.into_boxed_slice())))
@@ -572,12 +552,12 @@ fn check_expr(expr: &UntypedExpr, state: &SymbolTable) -> Result<(Type, Expr)> {
     }
 }
 
-/// Returns a slice expression and the type if its element in a box
+/// Returns a slice expression and the type of its element in a box
 fn check_indexable_expr(indexable: &UntypedExpr, state: &SymbolTable) -> Result<(Expr, Box<Type>)> {
     let (indexable_t, indexable) = check_expr(indexable, state)?;
 
     let (slice, inner_t) = match indexable_t {
-        Type::Array(element_t, _) => (Expr::SliceOfArray(indexable.location(), match indexable {
+        Type::Array(element_t, len) => (Expr::SliceOfArray(indexable.location(), element_t.clone(), len, match indexable {
             Expr::FieldAccess(loc, e, f) => Ok(PlaceExpr::FieldAccess(loc, e, f)),
             Expr::Ident(loc, id) => Ok(PlaceExpr::Ident(loc, id)),
             Expr::Deref(loc, e) => Ok(PlaceExpr::Deref(loc, e, element_t.clone())),

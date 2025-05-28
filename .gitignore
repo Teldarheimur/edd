@@ -4,3 +4,4 @@
 tests/*.telda
 tests/*.to
 tests/*.tb
+std.savn

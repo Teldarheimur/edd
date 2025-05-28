@@ -179,10 +179,7 @@ impl Hash for TypeVar {
 impl Eq for TypeVar {}
 impl PartialEq for TypeVar {
     fn eq(&self, other: &Self) -> bool {
-        ptr::addr_eq(
-            &*self.inner as *const RefCell<_>,
-            &*other.inner as *const RefCell<_>,
-        )
+        Rc::ptr_eq(&self.inner, &other.inner)
     }
 }
 impl Display for TypeVar {

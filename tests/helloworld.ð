@@ -1,5 +1,6 @@
 include("std.ðs");
 
-fn main() unit {
-    puts("\0Hello," ++ "\t" ++ "World!\0");
+export fn main() u16 {
+    puts("\0Hello," ++ "\t" ++ "World!\n");
+    0
 }

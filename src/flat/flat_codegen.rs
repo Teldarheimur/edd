@@ -140,13 +140,12 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             state.add_code(Line::SetAddrOfStackVar(place, t, s));
         }
 
-        Expr::SliceOfArray(_, Ok(PlaceExpr::Ident(_, i))) => {
+        Expr::SliceOfArray(_, inner_t, len, Ok(PlaceExpr::Ident(_, i))) => {
+            let inner_t = flatten_type(*inner_t);
             let (named, array_type) = state.lookup(i.clone());
-            let FlatType::Arr(inner_t, len) = array_type else {
-                unreachable!();
-            };
+            assert!(array_type.is_array_of(&inner_t, len));
 
-            let ptr = state.new_temp("array_ptr", FlatType::bptr(inner_t));
+            let ptr = state.new_temp("array_ptr", FlatType::ptr(inner_t));
 
             match named {
                 Named::Global(g) => state.add_code(Line::SetAddrOfGlobal(ptr.clone(), t.clone(), g)),
@@ -159,10 +158,27 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
 
             state.add_code(Line::SetStruct(place, t, Box::new([ptr, len_t])));
         }
-        Expr::SliceOfArray(_, Ok(_)) => todo!(),
-        Expr::SliceOfArray(_, Err(_)) => {
-            // is this even usefl??
-            todo!("make array via recursion and get its type and")
+        Expr::SliceOfArray(_, _, _, Ok(_)) => todo!(),
+        Expr::SliceOfArray(_, inner_t, len, Err(e)) => {
+            let inner_t = flatten_type(*inner_t);
+            let arr_t = FlatType::Arr(Box::new(inner_t.clone()), len);
+            match *e {
+                e @ (Expr::ConstString(_, _) | Expr::Concat(_, _, _)) => {
+                    let g = state.new_global("string");
+                    let mut namer = StaticNamer::new(&g.0);
+                    static_eval(g.clone(), arr_t, e, &mut namer, state.statics).unwrap();
+
+                    let ptr = state.new_temp("array_ptr", FlatType::ptr(inner_t));
+                    state.add_code(Line::SetAddrOfGlobal(ptr.clone(), t.clone(), g));
+                    let len_t = state.new_temp("array_len", FlatType::U16);
+                    state.add_code(Line::SetConst(len_t.clone(), FlatType::U16, Const::ConstU16(len)));
+
+                    state.add_code(Line::SetStruct(place, t, Box::new([ptr, len_t])));
+                }
+
+                // is this even useful??
+                _ => todo!("make array")
+            }
         }
 
         e @ (Expr::ConstString(_, _) | Expr::Concat(_, _, _)) => {
@@ -179,15 +195,6 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
 
             match (from_t, to_t) {
                 (t1, t2) if t1 == t2 => flatten_expr(*e, t1, place, state),
-                (FlatType::Arr(t, _sz), FlatType::Struct(st))
-                | (FlatType::Struct(st), FlatType::Arr(t, _sz)) => {
-                    if *st != [FlatType::bptr(t), FlatType::U16] {
-                        unimplemented!()
-                    }
-
-                    flatten_expr(*e, FlatType::Struct(st), place, state);
-                    // TODO: write size to slice
-                }
                 _ => todo!(),
             }
         }

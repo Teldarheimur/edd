@@ -353,7 +353,14 @@ impl Display for Ins {
             Global(s) => write!(f, "    .global {s}"),
             Byte(b) => write!(f, "    .byte {b}"),
             Wide(w) => write!(f, "    .wide {w}"),
-            String(s) => write!(f, "    .string {s}"),
+            String(s) => {
+                // Make own escape function that's compatible with assembler
+                write!(f, "    .string ")?;
+                for escaped in s.escape_debug() {
+                    write!(f, "{escaped}")?;
+                }
+                Ok(())
+            }
             Comment(c) => write!(f, "# {c}"),
 
             Nop => write!(f, ""), // !!

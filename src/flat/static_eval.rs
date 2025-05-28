@@ -12,7 +12,7 @@ pub fn compute_statics(
     statics: Vec<StaticDecl>,
 ) -> Vec<StaticDecl> {
     let mut calculate_order: Vec<(_, _, _, HashSet<_>)> = Vec::new();
-    let mut static_namer = StaticNamer::new("#s");
+    let mut static_namer = StaticNamer::new("s");
 
     for (name, t, expr) in static_exprs {
         let mut deps = HashSet::new();
@@ -63,13 +63,16 @@ fn lookup_in_out<'a>(out: &'a [StaticDecl], name: &Global) -> &'a StaticDecl {
     unreachable!()
 }
 
+#[derive(Debug)]
+pub enum SoFarNever {}
+
 pub fn static_eval(
     place: Global,
     t: FlatType,
     expr: Expr,
     namer: &mut StaticNamer,
     out: &mut Vec<StaticDecl>,
-) -> Result<(), Box<str>> {
+) -> Result<(), SoFarNever> {
     match expr {
         Expr::Ident(_, alias) => {
             out.push(StaticDecl::SetAlias(place, t, Global(alias)));
@@ -167,7 +170,7 @@ pub fn static_eval(
             todo!("FieldAccess({structlike}, {field})")
         }
         Expr::Element(_, _, _) => todo!(),
-        Expr::SliceOfArray(_, _) => todo!(),
+        Expr::SliceOfArray(_, _, _, _) => todo!(),
         Expr::Slice(_, _, _, _) => todo!(),
         Expr::Ref(_, Ok(_)) => todo!(),
         Expr::Array(_, _, _) => todo!(),
@@ -221,7 +224,7 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
         Expr::Cast(_, e, _, _) |
         Expr::Not(_, e) |
         Expr::Neg(_, e) |
-        Expr::SliceOfArray(_, Err(e)) |
+        Expr::SliceOfArray(_, _, _, Err(e)) |
         Expr::Deref(_, e) => expr_symbol_deps(e, deps, overshadowed),
         Expr::Block(_, stmnts) => {
             let overshadowed = &mut overshadowed.clone();
@@ -229,7 +232,7 @@ fn expr_symbol_deps(expr: &Expr, deps: &mut HashSet<Rc<str>>, overshadowed: &Has
                 statement_symbol_deps(stmnt, deps, overshadowed);
             }
         }
-        Expr::SliceOfArray(_, Ok(pl_expr)) |
+        Expr::SliceOfArray(_, _, _, Ok(pl_expr)) |
         Expr::Ref(_, Ok(pl_expr)) => pl_expr_symbol_deps(pl_expr, deps, overshadowed),
         Expr::StructConstructor(_, es) => {
             for (_, e) in es.iter() {

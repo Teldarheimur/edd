@@ -97,7 +97,6 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
         | Expr::ConstString(_, _)
         | Expr::ConstNull(_) => Ok(()),
         Expr::FieldAccess(_, e, _) |
-        Expr::SliceOfArray(_, Err(e)) |
         Expr::Ref(_, Err(e)) | Expr::Not(_, e) | Expr::Neg(_, e) | Expr::Deref(_, e) => {
             concretise_expr(e)
         }
@@ -108,12 +107,19 @@ pub fn concretise_expr(expr: &mut Expr) -> Result<()> {
             concretise_type(loc.clone(), ret)?;
             concretise_expr(e)
         }
+        Expr::SliceOfArray(loc, t, _, Err(e)) => {
+            concretise_type(loc.clone(), t)?;
+            concretise_expr(e)
+        }
         Expr::Cast(loc, e, t1, t2) => {
             concretise_expr(e)?;
             concretise_type(loc.clone(), t1)?;
             concretise_type(loc.clone(), t2)
         }
-        Expr::SliceOfArray(_, Ok(pl_e)) |
+        Expr::SliceOfArray(loc, t, _, Ok(pl_e)) => {
+            concretise_type(loc.clone(), t)?;
+            concretise_pexpr(pl_e)
+        }
         Expr::Ref(_, Ok(pl_e)) => concretise_pexpr(pl_e),
         Expr::Block(_, stmnts) => concretise_statements(stmnts),
         Expr::StructConstructor(_, es) => {

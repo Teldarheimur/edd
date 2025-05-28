@@ -34,7 +34,7 @@ fn check_expr(e: &mut Expr) {
         Expr::ConstUnit(_) |
         Expr::ConstString(_, _) |
         Expr::ConstNull(_) => (),
-        Expr::SliceOfArray(_, Ok(pe)) |
+        Expr::SliceOfArray(_, _, _, Ok(pe)) |
         Expr::Ref(_, Ok(pe)) => {
             check_place_expr(pe);
         }
@@ -67,7 +67,7 @@ fn check_expr(e: &mut Expr) {
         Expr::Cast(_, e, _, _) |
         Expr::Neg(_, e) |
         Expr::FieldAccess(_, e, _) |
-        Expr::SliceOfArray(_, Err(e)) |
+        Expr::SliceOfArray(_, _, _, Err(e)) |
         Expr::Ref(_, Err(e)) |
         Expr::Deref(_, e) => {
             check_expr(e);
