@@ -5,6 +5,7 @@ use edd::{
     rt::{run, RuntimeError, Store, Value}, telda::{compile_to_telda, Options as TeldaOptions, RegisterAllocator, Program as TeldaProgram},
     CompileOptions
 };
+use tempfile::NamedTempFile;
 
 use std::{fmt::Display, fs::File, io::{self, BufWriter}, path::PathBuf, process::{Command, ExitCode, Stdio}};
 
@@ -53,6 +54,8 @@ struct Args {
     #[arg(short = 'm', long, alias = "machine", default_value = "telda")]
     backend: Backend,
 
+    #[arg(short='o', long)]
+    output: Option<PathBuf>,
     #[arg()]
     /// Root source code file
     path: PathBuf,
@@ -77,6 +80,7 @@ fn main() -> ExitCode {
         dont_link,
         backend,
         path,
+        output,
     } = Args::parse();
 
     let mut opt = CompileOptions::default();
@@ -134,16 +138,16 @@ fn main() -> ExitCode {
             }
             let telda = compile_to_telda(program, opt);
             if stop_at_compilation {
-                handle(write_compiled_telda(telda, path), "writing assembly failed")
+                handle(write_compiled_telda(telda, path, output), "writing assembly failed")
             } else {
                 let assembled = match assemble_compiled_telda(telda) {
                     Ok(v) => v,
                     Err(e) => return handle(Err(e), "assembly with tasm failed"),
                 };
                 if dont_link {
-                    handle(write_bytes(&assembled, path, "to"), "writing object failed")
+                    handle(write_bytes(&assembled, path, "to", output), "writing object failed")
                 } else {
-                    todo!("automatic linking not yet done; run with -c to get object files and link manually")
+                    handle(link(assembled, path, output), "linking object failed")
                 }
             }
         }
@@ -173,21 +177,24 @@ fn put(vls: &[Value]) -> Value {
 
 use std::io::Write;
 
-fn write_compiled_telda(telda: TeldaProgram, mut path: PathBuf) -> Result<(), io::Error> {
+fn write_compiled_telda(telda: TeldaProgram, mut path: PathBuf, output: Option<PathBuf>) -> Result<(), io::Error> {
     path.set_extension("telda");
+    let path = output.unwrap_or(path);
 
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     write!(writer, "{telda}")
 }
-fn write_bytes(bytes: &[u8], mut path: PathBuf, extension: &str) -> Result<(), io::Error> {
+fn write_bytes(bytes: &[u8], mut path: PathBuf, extension: &str, output: Option<PathBuf>) -> Result<(), io::Error> {
     path.set_extension(extension);
+    let path = output.unwrap_or(path);
 
     let mut file = File::create(path)?;
     file.write_all(bytes)
 }
 
 const TELDA_ASSEMBLER: &str = "tasm";
+const TELDA_LINKER: &str = "tl";
 
 fn assemble_compiled_telda(telda: TeldaProgram) -> Result<Vec<u8>, io::Error> {
     let mut assembler = Command::new(TELDA_ASSEMBLER)
@@ -199,13 +206,42 @@ fn assemble_compiled_telda(telda: TeldaProgram) -> Result<Vec<u8>, io::Error> {
             _ => e,
         })?;
 
-    let mut stdin = assembler.stdin.take().expect("stdin piped");
+    let mut stdin = BufWriter::new(assembler.stdin.take().expect("stdin piped"));
     writeln!(stdin, "{telda}")?;
     drop(stdin);
 
     let output = assembler.wait_with_output()?;
     if output.status.success() {
         Ok(output.stdout)
+    } else {
+        Err(io::Error::new(io::ErrorKind::InvalidData, "non-success exit code"))
+    }
+}
+
+fn link(assembled: Vec<u8>, mut path: PathBuf, output: Option<PathBuf>) -> Result<(), io::Error> {
+    let f = NamedTempFile::new()?;
+    write_bytes(&assembled, PathBuf::new(), "to", Some(f.path().to_owned()))?;
+
+    path.set_extension("tb");
+    let path = output.unwrap_or(path);
+
+    let output = Command::new(TELDA_LINKER)
+        .arg("-e")
+        .arg("-E")
+        .arg("start")
+        .arg("-o")
+        .arg(path)
+        .arg(f.path())
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .output().map_err(|e| match e.kind() {
+            io::ErrorKind::NotFound => io::Error::new(io::ErrorKind::NotFound, "could not start `tl'"),
+            _ => e,
+        })?;
+
+    if output.status.success() {
+        Ok(())
     } else {
         Err(io::Error::new(io::ErrorKind::InvalidData, "non-success exit code"))
     }
