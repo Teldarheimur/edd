@@ -377,7 +377,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             let ptr_t = FlatType::ptr(t.clone());
             let ptr_place = state.new_temp("ptr_deref", ptr_t.clone());
             flatten_expr(*e, ptr_t.clone(), ptr_place.clone(), state);
-            state.add_code(Line::SetUnop(place, t, Unop::Deref, ptr_place));
+            state.add_code(Line::ReadFromAddr(place, t, ptr_place, Temp::ZERO));
         }
         Expr::Lambda(_, args, ret, body) => {
             let lambda_g = state.new_global("lambda");

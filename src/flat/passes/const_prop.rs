@@ -244,7 +244,6 @@ fn apply_unop(unop: Unop, c: Const) -> Const {
         (Unop::Not, Const::ConstU32(i)) => Const::ConstU32(!i),
         (Unop::Not, Const::ConstBoolean(b)) => Const::ConstBoolean(!b),
         (Unop::Not, _) => unreachable!(),
-        (Unop::Deref, _) => unreachable!("constant deref is not yet implemented"),
     }
 }
 

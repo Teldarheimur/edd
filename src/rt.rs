@@ -285,10 +285,6 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
                         _ => unreachable!(),
                     },
                     Unop::Neg => -operand,
-                    Unop::Deref => match operand {
-                        Value::Ref(addr) => state.read_addr(addr),
-                        _ => unreachable!(),
-                    },
                 };
                 state.set_temp(dest.clone(), val);
             }

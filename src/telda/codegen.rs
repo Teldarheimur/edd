@@ -488,7 +488,60 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                 (Unop::Neg, FlatType::I16) => {
                     code.push(Ins::SubW(state.get_wide(&dest), R0, state.get_wide(&s)));
                 }
-                _ => todo!(),
+                (Unop::Neg, FlatType::I32) => {
+                    // might as well be the same register, but splitting them up
+                    // in case future optimisations can re-use the constants
+                    let one = state.new_wide_reg();
+                    let ones = state.new_wide_reg();
+                    let (dl, dh) = state.get_dwide(&dest);
+                    let no_overflow = state.new_label();
+                    // TODO: check if this is better than just subtracting by 1
+                    code.extend([
+                        Ins::LdiW(ones, Wi::Constant(0xffff)),
+                        Ins::XorW(dl, dl, ones),
+                        Ins::XorW(dh, dh, ones),
+                        Ins::LdiW(one, Wi::Constant(1)),
+                        Ins::AddW(dl, dl, one),
+                        Ins::Jno(Wi::Symbol(no_overflow.clone())),
+                        Ins::AddW(dh, dh, one),
+                        Ins::Label(no_overflow),
+                    ]);
+                },
+                (Unop::Neg, FlatType::Float) => unimplemented!(),
+                (Unop::Not, FlatType::Bool) => {
+                    let one = state.new_byte_reg();
+                    let dest = state.get_byte(&dest);
+                    code.extend([
+                        Ins::LdiB(one, Bi::Constant(1)),
+                        Ins::XorB(dest, dest, one),
+                    ]);
+                }
+                (Unop::Not, FlatType::U8) => {
+                    let ones = state.new_byte_reg();
+                    let dest = state.get_byte(&dest);
+                    code.extend([
+                        Ins::LdiB(ones, Bi::Constant(0xff)),
+                        Ins::XorB(dest, dest, ones),
+                    ]);
+                }
+                (Unop::Not, FlatType::U16) => {
+                    let ones = state.new_wide_reg();
+                    let dest = state.get_wide(&dest);
+                    code.extend([
+                        Ins::LdiW(ones, Wi::Constant(0xffff)),
+                        Ins::XorW(dest, dest, ones),
+                    ]);
+                }
+                (Unop::Not, FlatType::U32) => {
+                    let ones = state.new_wide_reg();
+                    let (d1, d2) = state.get_dwide(&dest);
+                    code.extend([
+                        Ins::LdiW(ones, Wi::Constant(0xffff)),
+                        Ins::XorW(d1, d1, ones),
+                        Ins::XorW(d2, d2, ones),
+                    ]);
+                }
+                (unop, t) => unimplemented!("{unop} {t}"),
             },
             Line::SetCall(dest, t, g, arguments) => {
                 // TODO: determine calling convetion from the global

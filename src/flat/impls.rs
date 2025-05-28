@@ -372,7 +372,6 @@ impl Display for Unop {
         match self {
             Unop::Not => write!(f, "!"),
             Unop::Neg => write!(f, "-"),
-            Unop::Deref => write!(f, "*"),
         }
     }
 }

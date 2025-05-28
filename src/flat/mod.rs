@@ -253,5 +253,4 @@ pub enum Binop {
 pub enum Unop {
     Not,
     Neg,
-    Deref,
 }
