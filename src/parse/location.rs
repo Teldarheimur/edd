@@ -44,7 +44,7 @@ impl Display for Location {
         // }
         write!(
             f,
-            "{}:{}:{} - {}:{}",
+            "{}:{}:{}-{}.{}",
             self.source_file.display(),
             self.line_start,
             self.col_start,
