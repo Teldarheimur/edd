@@ -50,6 +50,7 @@ fn remove_unused(program: &mut Program, symtab: Symtab, exports: Vec<Global>) {
 
     // Remove unused
     program.statics.retain(|decl| match decl {
+        StaticDecl::SetZero(name, _) |
         StaticDecl::SetConst(name, _, _) |
         StaticDecl::SetAlias(name, _, _) |
         StaticDecl::SetArray(name, _, _) |
@@ -66,6 +67,7 @@ fn mark_statics(statics: &[StaticDecl], symtab: &mut Symtab) {
             StaticDecl::SetAlias(g, _, g2) |
             StaticDecl::SetPtr(g, _, g2) => symtab.reference_from(g, g2),
             StaticDecl::SetConst(_g, _, _) |
+            StaticDecl::SetZero(_g, _) |
             StaticDecl::SetArray(_g, _, _) |
             StaticDecl::SetString(_g, _, _) |
             StaticDecl::External(_g, _) => {},

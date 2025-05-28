@@ -49,6 +49,7 @@ fn lookup_in_out<'a>(out: &'a [StaticDecl], name: &Global) -> &'a StaticDecl {
     for sd in out.iter().rev() {
         match sd {
             sd @ (StaticDecl::SetConst(g, _, _)
+            | StaticDecl::SetZero(g, _)
             | StaticDecl::SetAlias(g, _, _)
             | StaticDecl::SetArray(g, _, _)
             | StaticDecl::SetString(g, _, _)
@@ -124,7 +125,7 @@ pub fn static_eval(
             Ok(())
         }
         Expr::ConstUnit(_) | Expr::ConstNull(_) => {
-            out.push(StaticDecl::SetConst(place, t, Const::ConstZero));
+            out.push(StaticDecl::SetZero(place, t));
             Ok(())
         }
         Expr::Ref(_, Err(e)) => {

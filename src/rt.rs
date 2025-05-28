@@ -170,7 +170,6 @@ const fn const_to_val(c: Const) -> Value {
         Const::ConstI32(num) => Value::I32(num),
         Const::ConstU32(num) => Value::U32(num),
         Const::ConstFloat(num) => Value::Float(num),
-        Const::ConstZero => Value::Naught,
     }
 }
 
@@ -178,6 +177,7 @@ pub fn run(program: Program, gs: &mut Store) -> Result<Value, RuntimeError> {
     for static_decl in program.statics {
         match static_decl {
             StaticDecl::SetConst(n, _, val) => gs.add_var(n.into_inner(), const_to_val(val)),
+            StaticDecl::SetZero(n, _) => gs.add_var(n.into_inner(), Value::Naught),
             StaticDecl::SetAlias(n, _, val) => {
                 let val = gs.lookup(val.inner());
                 gs.add_var(n.into_inner(), val);

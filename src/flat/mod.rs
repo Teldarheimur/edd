@@ -160,6 +160,7 @@ pub struct Program {
 pub enum StaticDecl {
     // TODO: have a way to mark a global as immutable again
     SetConst(Global, FlatType, Const),
+    SetZero(Global, FlatType),
     SetAlias(Global, FlatType, Global),
     SetArray(Global, FlatType, Box<[Const]>),
     SetString(Global, FlatType, Box<str>),
@@ -233,8 +234,33 @@ pub enum Const {
     ConstI32(i32),
     ConstU32(u32),
     ConstFloat(f64),
-    /// Used for `null`, `unit` (which will be zero-sized anyways) and anything zero-initialised
-    ConstZero,
+}
+impl Const {
+    pub const fn zero(self) -> Self {
+        match self {
+            Const::ConstBoolean(_) => Const::ConstBoolean(false),
+            Const::ConstI8(_) => Const::ConstI8(0),
+            Const::ConstU8(_) => Const::ConstU8(0),
+            Const::ConstI16(_) => Const::ConstI16(0),
+            Const::ConstU16(_) => Const::ConstU16(0),
+            Const::ConstI32(_) => Const::ConstI32(0),
+            Const::ConstU32(_) => Const::ConstU32(0),
+            Const::ConstFloat(_) => Const::ConstFloat(0.),
+        }
+    }
+    pub const fn is_zero(self) -> bool {
+        match self {
+            Const::ConstFloat(0.) |
+            Const::ConstBoolean(false) |
+            Const::ConstI8(0) |
+            Const::ConstU8(0) |
+            Const::ConstI16(0) |
+            Const::ConstU16(0) |
+            Const::ConstI32(0) |
+            Const::ConstU32(0) => true,
+            _ => false
+        }
+    }
 }
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Binop {

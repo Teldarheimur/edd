@@ -88,6 +88,9 @@ impl<'a> FunctionState<'a> {
         Rpw(self.pseudo_counter)
     }
     fn get_byte(&mut self, temp: &Temp) -> Br {
+        if temp == &Temp::ZERO {
+            return R0b;
+        }
         if let Some(list) = self.temps.get(temp) {
             match &**list {
                 &[Reg::ByteReg(b)] => return b,
@@ -100,6 +103,9 @@ impl<'a> FunctionState<'a> {
         reg
     }
     fn get_wide(&mut self, temp: &Temp) -> Wr {
+        if temp == &Temp::ZERO {
+            return R0;
+        }
         if let Some(list) = self.temps.get(temp) {
             match &**list {
                 &[Reg::WideReg(w)] => return w,
@@ -112,6 +118,9 @@ impl<'a> FunctionState<'a> {
         reg
     }
     fn get_dwide(&mut self, temp: &Temp) -> (Wr, Wr) {
+        if temp == &Temp::ZERO {
+            return (R0, R0);
+        }
         if let Some(list) = self.temps.get(temp) {
             match &**list {
                 &[Reg::WideReg(l), Reg::WideReg(h)] => return (l, h),
@@ -257,7 +266,7 @@ pub fn generate_program(program: FlatProgram) -> Program {
     Program { data, fns, extra_text }
 }
 
-fn generate_static_const(c: Const, t: &FlatType, data: &mut Vec<Ins>) {
+fn generate_static_const(c: Const, data: &mut Vec<Ins>) {
     match c {
         Const::ConstBoolean(b) => data.push(Ins::Byte(Bi::Constant(b as u8))),
         Const::ConstU8(b) => data.push(Ins::Byte(Bi::Constant(b))),
@@ -274,15 +283,18 @@ fn generate_static_const(c: Const, t: &FlatType, data: &mut Vec<Ins>) {
             data.push(Ins::Wide(Wi::Constant(l)));
             data.push(Ins::Wide(Wi::Constant(h)));
         }
-        Const::ConstZero => data.push(Ins::Zeroes(sizeof(t))),
         Const::ConstFloat(_) => todo!(),
     }
 }
 fn generate_decl(decl: StaticDecl, data: &mut Vec<Ins>) {
     match decl {
-        StaticDecl::SetConst(g, t, c) => {
+        StaticDecl::SetConst(g, _, c) => {
             data.push(Ins::Label(g.into_inner()));
-            generate_static_const(c, &t, data);
+            generate_static_const(c, data);
+        }
+        StaticDecl::SetZero(g, t) => {
+            data.push(Ins::Label(g.into_inner()));
+            data.push(Ins::Zeroes(sizeof(&t)))
         }
         StaticDecl::SetAlias(g, _, predefined) => {
             let i = data
@@ -291,10 +303,10 @@ fn generate_decl(decl: StaticDecl, data: &mut Vec<Ins>) {
                 .expect("aliased statics do not work out of order right now");
             data.insert(i, Ins::Label(g.into_inner()));
         }
-        StaticDecl::SetArray(g, t, consts) => {
+        StaticDecl::SetArray(g, _, consts) => {
             data.push(Ins::Label(g.into_inner()));
             for c in consts {
-                generate_static_const(c, &t, data);
+                generate_static_const(c, data);
             }
         }
         StaticDecl::SetString(g, _, s) => {
@@ -314,7 +326,7 @@ fn generate_decl(decl: StaticDecl, data: &mut Vec<Ins>) {
 fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoIterator<Item=Line>, return_registers: &[Reg]) {
     for line in lines {
         match line {
-            Line::SetConst(t, ty, c) => match c {
+            Line::SetConst(t, _, c) => match c {
                 Const::ConstBoolean(b) => {
                     code.push(Ins::LdiB(state.get_byte(&t), Bi::Constant(b as u8)))
                 }
@@ -337,16 +349,16 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                     code.push(Ins::LdiW(hr, Wi::Constant(h)));
                 }
                 Const::ConstFloat(_) => todo!(),
-                Const::ConstZero => {
-                    // this just sets everything to binary zeroes, types like reals shouldn't use this
-                    for &reg in state.get(&t, Some(&ty)) {
-                        match reg {
-                            Reg::ByteReg(br) => code.push(Ins::MoveB(br, R0b)),
-                            Reg::WideReg(wr) => code.push(Ins::MoveW(wr, R0)),
-                        }
+            },
+            Line::SetTo(t, ty, Temp::ZERO) => {
+                // this just sets everything to binary zeroes, types like reals shouldn't use this
+                for &reg in state.get(&t, Some(&ty)) {
+                    match reg {
+                        Reg::ByteReg(br) => code.push(Ins::MoveB(br, R0b)),
+                        Reg::WideReg(wr) => code.push(Ins::MoveW(wr, R0)),
                     }
                 }
-            },
+            }
             Line::SetTo(t1, ty, t2) => {
                 let dest_regs: Vec<_> = state.get(&t1, Some(&ty)).to_vec();
                 for (dest, src) in dest_regs
@@ -646,7 +658,7 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
             }
             Line::If(cond, true_lbl, false_lbl) => {
                 code.push(Ins::SubB(R0b, state.get_byte(&cond), R0b));
-                code.push(Ins::Jez(Wi::Symbol(state.get_label(&true_lbl))));
+                code.push(Ins::Jnz(Wi::Symbol(state.get_label(&true_lbl))));
                 code.push(Ins::Jump(Wi::Symbol(state.get_label(&false_lbl))));
             }
             Line::Goto(lbl) => {
@@ -684,6 +696,13 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
 }
 
 fn generate_set_binop_rel(code: &mut Vec<Ins>, state: &mut FunctionState<'_>, r: Binop, t: FlatType, dest: Temp, t1: Temp, t2: Temp) {
+    // !!!
+    // !!!
+    // !!!
+    // TODO: fix this when you get home
+    // !!!
+    // !!!
+    // !!!
     type JumpIns = fn(Wi) -> Ins;
     let (ucjmp, scjmp, unotcjmp, snotcjmp): (JumpIns, JumpIns, JumpIns, JumpIns) = match r {
         Binop::Eq => (Ins::Jez, Ins::Jez, Ins::Jnz, Ins::Jnz),

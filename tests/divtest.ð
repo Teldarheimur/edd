@@ -6,7 +6,10 @@ fn calculate(x: i16, y: i16) i16 {
 
 export
 fn main() unit {
+    puts("trying 4, 2\n");
     puti16(calculate(4, 2));
+    puts("\ntrying -7, 4\n");
     puti16(calculate(-7, 4));
+    puts("\ntrying 100, 0\n");
     puti16(calculate(100, 0));
 }

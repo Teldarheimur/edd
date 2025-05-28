@@ -140,6 +140,7 @@ impl<'a> FlattenState<'a> {
         for decl in self.statics.iter() {
             match decl {
                 StaticDecl::SetConst(n, t, _)
+                | StaticDecl::SetZero(n, t)
                 | StaticDecl::SetAlias(n, t, _)
                 | StaticDecl::SetArray(n, t, _)
                 | StaticDecl::SetString(n, t, _)

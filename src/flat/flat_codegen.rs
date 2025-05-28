@@ -114,7 +114,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             state.add_code(Line::SetConst(place, t, c));
         }
         Expr::ConstUnit(_) | Expr::ConstNull(_) => {
-            state.add_code(Line::SetConst(place, t, Const::ConstZero));
+            state.add_code(Line::SetTo(place, t, Temp::ZERO));
         }
         Expr::Ref(loc, Ok(PlaceExpr::Ident(_, i))) => {
             let (named, stored_type) = state.lookup(i.clone());
@@ -232,7 +232,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             let t = t;
 
             let zero_t = state.new_temp("zero", t.clone());
-            state.add_code(Line::SetConst(zero_t.clone(), t.clone(), Const::ConstZero));
+            state.add_code(Line::SetTo(zero_t.clone(), t.clone(), Temp::ZERO));
             let is_zero = state.new_temp("zero_cond", FlatType::Bool);
             state.add_code(Line::SetBinop(
                 is_zero.clone(),

@@ -134,6 +134,7 @@ impl Display for Program {
         for s in &self.statics {
             match s {
                 StaticDecl::SetConst(dest, t, val) => writeln!(f, "static {dest}: {t} = {val}")?,
+                StaticDecl::SetZero(dest, t ) => writeln!(f, "static {dest}: {t} = @ZERO")?,
                 StaticDecl::SetAlias(dest, t, val) => writeln!(f, "static {dest}: {t} = {val}")?,
                 StaticDecl::SetArray(dest, t, vals) => {
                     write!(f, "static {dest}: {t} = [")?;
@@ -347,7 +348,6 @@ impl Display for Const {
             Const::ConstI32(i) => write!(f, "{i}i32"),
             Const::ConstU32(i) => write!(f, "{i}u32"),
             Const::ConstFloat(num) => write!(f, "{num}f"),
-            Const::ConstZero => write!(f, "null"),
         }
     }
 }
