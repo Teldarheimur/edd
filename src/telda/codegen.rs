@@ -307,22 +307,6 @@ fn generate_decl(decl: StaticDecl, code: &mut Vec<Ins>) {
     }
 }
 
-const fn const_16(t: Wr, n: u16) -> Ins {
-    if n < 255 {
-        let b = n as u8;
-        match t {
-            Wr::R6 => Ins::LdiB(Br::R6b, Bi::Constant(b)),
-            Wr::R7 => Ins::LdiB(Br::R7b, Bi::Constant(b)),
-            Wr::R8 => Ins::LdiB(Br::R8b, Bi::Constant(b)),
-            Wr::R9 => Ins::LdiB(Br::R9b, Bi::Constant(b)),
-            Wr::R10 => Ins::LdiB(Br::R10b, Bi::Constant(b)),
-            t => Ins::LdiW(t, Wi::Constant(n)),
-        }
-    } else {
-        Ins::LdiW(t, Wi::Constant(n))
-    }
-}
-
 fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoIterator<Item=Line>, return_registers: &[Reg]) {
     for line in lines {
         match line {
@@ -334,8 +318,8 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                     code.push(Ins::LdiB(state.get_byte(&t), Bi::Constant(b as u8)))
                 }
                 Const::ConstU8(b) => code.push(Ins::LdiB(state.get_byte(&t), Bi::Constant(b))),
-                Const::ConstI16(w) => code.push(const_16(state.get_wide(&t), w as u16)),
-                Const::ConstU16(w) => code.push(const_16(state.get_wide(&t), w)),
+                Const::ConstI16(w) => code.push(Ins::LdiW(state.get_wide(&t), Wi::Constant(w as u16))),
+                Const::ConstU16(w) => code.push(Ins::LdiW(state.get_wide(&t), Wi::Constant(w))),
                 Const::ConstI32(dw) => {
                     let (l, h) = split_u32(dw as u32);
                     let (lr, hr) = state.get_dwide(&t);
