@@ -108,6 +108,7 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
     fn get_gen(&self, conv: &CallingConvention<Reg>) -> Vec<Reg> {
         match *self {
             TeldaIns::Null |
+            TeldaIns::Zeroes(_) |
             TeldaIns::Label(_) |
             TeldaIns::Byte(_) |
             TeldaIns::Wide(_) |
@@ -173,6 +174,7 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
     fn get_kill(&self, conv: &CallingConvention<Reg>) -> Vec<Reg> {
         match *self {
             TeldaIns::Null |
+            TeldaIns::Zeroes(_) |
             TeldaIns::Label(_) |
             TeldaIns::Byte(_) |
             TeldaIns::Wide(_) |
@@ -290,6 +292,7 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
     fn rename_src_args<F: FnMut(Reg) -> Reg>(&mut self, mut rename_register: F) {
         match self {
             TeldaIns::Null |
+            TeldaIns::Zeroes(_) |
             TeldaIns::Label(_) |
             TeldaIns::Byte(_) |
             TeldaIns::Wide(_) |
@@ -442,6 +445,7 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
     fn rename_dest_args<F: FnMut(Reg) -> Reg>(&mut self, mut rename_register: F) {
         match self {
             TeldaIns::Null |
+            TeldaIns::Zeroes(_) |
             TeldaIns::Label(_) |
             TeldaIns::Byte(_) |
             TeldaIns::Wide(_) |

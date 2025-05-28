@@ -212,6 +212,7 @@ pub enum Ins {
     Label(Rc<str>),
     Byte(Bi),
     Wide(Wi),
+    Zeroes(u16),
     String(Box<str>),
     Ref(Rc<str>),
     Global(Rc<str>),
@@ -348,6 +349,14 @@ impl Display for Ins {
         use self::Ins::*;
         match self {
             Null => write!(f, "    null"),
+            // TODO: use a directive that puts _n_ zeroes
+            &Zeroes(n) => {
+                write!(f, "    .string \"")?;
+                for _ in 0..n {
+                    write!(f, "\\0")?;
+                }
+                write!(f, "\"")
+            }
             Label(a) => write!(f, "{a}:"),
             Ref(s) => write!(f, "    .ref {s}"),
             Global(s) => write!(f, "    .global {s}"),

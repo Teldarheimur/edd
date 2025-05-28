@@ -4,7 +4,7 @@ use crate::{flat::{
     Binop, Const, FlatType, Label, Line, Program as FlatProgram, StaticDecl, Temp, Unop,
 }, regalloc::CallingConvention};
 
-use super::{impl_regalloc::CONV, Bi, Br::{self, *}, Function, Ins, Program, Reg, Wi, Wr::{self, *}};
+use super::{impl_regalloc::CONV, sizeof, Bi, Br::{self, *}, Function, Ins, Program, Reg, Wi, Wr::{self, *}};
 
 #[derive(Debug, Clone, Default)]
 struct ObjectState {
@@ -86,16 +86,6 @@ impl<'a> FunctionState<'a> {
     fn new_wide_reg(&mut self) -> Wr {
         self.pseudo_counter += 1;
         Rpw(self.pseudo_counter)
-    }
-    /// Makes sure that the temporary is bound to exactly zero registers, representing a zero-sized type
-    fn get_nothing(&mut self, temp: &Temp) {
-        if let Some(list) = self.temps.get(temp) {
-            match &**list {
-                &[] => return,
-                _ => unreachable!(),
-            }
-        }
-        self.temps.insert(temp.clone(), Box::new([]));
     }
     fn get_byte(&mut self, temp: &Temp) -> Br {
         if let Some(list) = self.temps.get(temp) {
@@ -267,42 +257,56 @@ pub fn generate_program(program: FlatProgram) -> Program {
     Program { data, fns, extra_text }
 }
 
-fn generate_decl(decl: StaticDecl, code: &mut Vec<Ins>) {
+fn generate_static_const(c: Const, t: &FlatType, data: &mut Vec<Ins>) {
+    match c {
+        Const::ConstBoolean(b) => data.push(Ins::Byte(Bi::Constant(b as u8))),
+        Const::ConstU8(b) => data.push(Ins::Byte(Bi::Constant(b))),
+        Const::ConstI8(b) => data.push(Ins::Byte(Bi::Constant(b as u8))),
+        Const::ConstI16(w) => data.push(Ins::Wide(Wi::Constant(w as u16))),
+        Const::ConstU16(w) => data.push(Ins::Wide(Wi::Constant(w))),
+        Const::ConstI32(dw) => {
+            let (l, h) = split_u32(dw as u32);
+            data.push(Ins::Wide(Wi::Constant(l)));
+            data.push(Ins::Wide(Wi::Constant(h)));
+        }
+        Const::ConstU32(dw) => {
+            let (l, h) = split_u32(dw);
+            data.push(Ins::Wide(Wi::Constant(l)));
+            data.push(Ins::Wide(Wi::Constant(h)));
+        }
+        Const::ConstZero => data.push(Ins::Zeroes(sizeof(t))),
+        Const::ConstFloat(_) => todo!(),
+    }
+}
+fn generate_decl(decl: StaticDecl, data: &mut Vec<Ins>) {
     match decl {
-        StaticDecl::SetConst(g, _, c) => {
-            code.push(Ins::Label(g.into_inner()));
-            match c {
-                Const::ConstBoolean(b) => code.push(Ins::Byte(Bi::Constant(b as u8))),
-                Const::ConstU8(b) => code.push(Ins::Byte(Bi::Constant(b))),
-                Const::ConstI8(b) => code.push(Ins::Byte(Bi::Constant(b as u8))),
-                Const::ConstI16(w) => code.push(Ins::Wide(Wi::Constant(w as u16))),
-                Const::ConstU16(w) => code.push(Ins::Wide(Wi::Constant(w))),
-                Const::ConstI32(dw) => {
-                    let (l, h) = split_u32(dw as u32);
-                    code.push(Ins::Wide(Wi::Constant(l)));
-                    code.push(Ins::Wide(Wi::Constant(h)));
-                }
-                Const::ConstU32(dw) => {
-                    let (l, h) = split_u32(dw);
-                    code.push(Ins::Wide(Wi::Constant(l)));
-                    code.push(Ins::Wide(Wi::Constant(h)));
-                }
-                Const::ConstFloat(_) => todo!(),
-                Const::ConstZero => todo!(),
+        StaticDecl::SetConst(g, t, c) => {
+            data.push(Ins::Label(g.into_inner()));
+            generate_static_const(c, &t, data);
+        }
+        StaticDecl::SetAlias(g, _, predefined) => {
+            let i = data
+                .iter()
+                .position(|i| matches!(i, Ins::Label(g) if predefined.inner() == g))
+                .expect("aliased statics do not work out of order right now");
+            data.insert(i, Ins::Label(g.into_inner()));
+        }
+        StaticDecl::SetArray(g, t, consts) => {
+            data.push(Ins::Label(g.into_inner()));
+            for c in consts {
+                generate_static_const(c, &t, data);
             }
         }
-        StaticDecl::SetAlias(_, _, _) => todo!(),
-        StaticDecl::SetArray(_, _, _) => todo!(),
         StaticDecl::SetString(g, _, s) => {
-            code.push(Ins::Label(g.into_inner()));
-            code.push(Ins::String(s));
+            data.push(Ins::Label(g.into_inner()));
+            data.push(Ins::String(s));
         }
         StaticDecl::SetPtr(g, _, o) => {
-            code.push(Ins::Label(g.into_inner()));
-            code.push(Ins::Wide(Wi::Symbol(o.into_inner())));
+            data.push(Ins::Label(g.into_inner()));
+            data.push(Ins::Wide(Wi::Symbol(o.into_inner())));
         }
         StaticDecl::External(g, _) => {
-            code.push(Ins::Ref(g.into_inner()));
+            data.push(Ins::Ref(g.into_inner()));
         }
     }
 }
@@ -334,28 +338,12 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                 }
                 Const::ConstFloat(_) => todo!(),
                 Const::ConstZero => {
-                    // make sure the temporary exists in the database
-                    match ty {
-                        FlatType::Unit => {
-                            // Make sure the temporary is known and gets bound to an empty list of registers
-                            state.get_nothing(&t);
+                    // this just sets everything to binary zeroes, types like reals shouldn't use this
+                    for &reg in state.get(&t, Some(&ty)) {
+                        match reg {
+                            Reg::ByteReg(br) => code.push(Ins::MoveB(br, R0b)),
+                            Reg::WideReg(wr) => code.push(Ins::MoveW(wr, R0)),
                         }
-                        FlatType::U8 | FlatType::I8 => {
-                            code.push(Ins::MoveB(state.get_byte(&t), R0b));
-                        }
-                        FlatType::Ptr(_)
-                        | FlatType::FnPtr(_, _)
-                        | FlatType::U16
-                        | FlatType::I16 => {
-                            code.push(Ins::MoveW(state.get_wide(&t), R0));
-                        }
-                        FlatType::U32 | FlatType::I32 => {
-                            let (lr, hr) = state.get_dwide(&t);
-                            code.push(Ins::MoveW(lr, Wr::R0));
-                            code.push(Ins::MoveW(hr, Wr::R0));
-                        }
-                        FlatType::Float => unimplemented!(),
-                        _ => unreachable!("type cannot get value 0"),
                     }
                 }
             },
