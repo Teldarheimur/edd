@@ -150,8 +150,12 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
             TeldaIns::JmpR(r) => vec![WideReg(r)],
             TeldaIns::AddB(_, r1, r2) => vec![ByteReg(r1), ByteReg(r2)],
             TeldaIns::AddW(_, r1, r2) => vec![WideReg(r1), WideReg(r2)],
+            TeldaIns::AdcB(_, r1, r2) => vec![ByteReg(r1), ByteReg(r2)],
+            TeldaIns::AdcW(_, r1, r2) => vec![WideReg(r1), WideReg(r2)],
             TeldaIns::SubB(_, r1, r2) => vec![ByteReg(r1), ByteReg(r2)],
             TeldaIns::SubW(_, r1, r2) => vec![WideReg(r1), WideReg(r2)],
+            TeldaIns::SbbB(_, r1, r2) => vec![ByteReg(r1), ByteReg(r2)],
+            TeldaIns::SbbW(_, r1, r2) => vec![WideReg(r1), WideReg(r2)],
             TeldaIns::AndB(_, r1, r2) => vec![ByteReg(r1), ByteReg(r2)],
             TeldaIns::AndW(_, r1, r2) => vec![WideReg(r1), WideReg(r2)],
             TeldaIns::OrB(_, r1, r2) => vec![ByteReg(r1), ByteReg(r2)],
@@ -216,8 +220,12 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
             TeldaIns::JmpR(_) => vec![],
             TeldaIns::AddB(r1, _, _) => vec![ByteReg(r1)],
             TeldaIns::AddW(r1, _, _) => vec![WideReg(r1)],
+            TeldaIns::AdcB(r1, _, _) => vec![ByteReg(r1)],
+            TeldaIns::AdcW(r1, _, _) => vec![WideReg(r1)],
             TeldaIns::SubB(r1, _, _) => vec![ByteReg(r1)],
             TeldaIns::SubW(r1, _, _) => vec![WideReg(r1)],
+            TeldaIns::SbbB(r1, _, _) => vec![ByteReg(r1)],
+            TeldaIns::SbbW(r1, _, _) => vec![WideReg(r1)],
             TeldaIns::AndB(r1, _, _) => vec![ByteReg(r1)],
             TeldaIns::AndW(r1, _, _) => vec![WideReg(r1)],
             TeldaIns::OrB(r1, _, _) => vec![ByteReg(r1)],
@@ -355,85 +363,39 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
             TeldaIns::LdiB(_, _) => (),
             TeldaIns::LdiW(_, _) => (),
             TeldaIns::JmpR(r) => *r = rename_wide(*r, rename_register),
-            TeldaIns::AddB(_, r1, r2) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, &mut rename_register);
-            }
-            TeldaIns::AddW(_, r1, r2) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, &mut rename_register);
-            }
-            TeldaIns::SubB(_d, r1, r2) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, &mut rename_register);
-            }
-            TeldaIns::SubW(_, r1, r2) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, &mut rename_register);
-            }
-            TeldaIns::AndB(_, r1, r2) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, &mut rename_register);
-            }
-            TeldaIns::AndW(_, r1, r2) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, &mut rename_register);
-            }
-            TeldaIns::OrB(_, r1, r2) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, &mut rename_register);
-            }
-            TeldaIns::OrW(_, r1, r2) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, &mut rename_register);
-            }
-            TeldaIns::XorB(_, r1, r2) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, &mut rename_register);
-            }
-            TeldaIns::XorW(_, r1, r2) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, &mut rename_register);
-            }
-            TeldaIns::ShlB(_, r1, r2) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, &mut rename_register);
-            }
-            TeldaIns::ShlW(_, r1, r2) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, &mut rename_register);
-            }
-            TeldaIns::AsrB(_, r1, r2) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, &mut rename_register);
-            }
-            TeldaIns::AsrW(_, r1, r2) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, &mut rename_register);
-            }
+            TeldaIns::AddB(_, r1, r2) |
+            TeldaIns::AdcB(_, r1, r2) |
+            TeldaIns::SubB(_, r1, r2) |
+            TeldaIns::SbbB(_, r1, r2) |
+            TeldaIns::AndB(_, r1, r2) |
+            TeldaIns::OrB(_, r1, r2) |
+            TeldaIns::XorB(_, r1, r2) |
+            TeldaIns::ShlB(_, r1, r2) |
+            TeldaIns::AsrB(_, r1, r2) |
             TeldaIns::LsrB(_, r1, r2) => {
                 *r1 = rename_byte(*r1, &mut rename_register);
                 *r2 = rename_byte(*r2, &mut rename_register);
             }
+            TeldaIns::AddW(_, r1, r2) |
+            TeldaIns::AdcW(_, r1, r2) |
+            TeldaIns::SubW(_, r1, r2) |
+            TeldaIns::SbbW(_, r1, r2) |
+            TeldaIns::AndW(_, r1, r2) |
+            TeldaIns::OrW(_, r1, r2) |
+            TeldaIns::XorW(_, r1, r2) |
+            TeldaIns::ShlW(_, r1, r2) |
+            TeldaIns::AsrW(_, r1, r2) |
             TeldaIns::LsrW(_, r1, r2) => {
                 *r1 = rename_wide(*r1, &mut rename_register);
                 *r2 = rename_wide(*r2, &mut rename_register);
             }
-            TeldaIns::DivB(_, r1, r2, r3) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, &mut rename_register);
-                *r3 = rename_byte(*r3, &mut rename_register);
-            }
-            TeldaIns::DivW(_, r1, r2, r3) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, &mut rename_register);
-                *r3 = rename_wide(*r3, &mut rename_register);
-            }
+            TeldaIns::DivB(_, r1, r2, r3) |
             TeldaIns::MulB(_, r1, r2, r3) => {
                 *r1 = rename_byte(*r1, &mut rename_register);
                 *r2 = rename_byte(*r2, &mut rename_register);
                 *r3 = rename_byte(*r3, &mut rename_register);
             }
+            TeldaIns::DivW(_, r1, r2, r3) |
             TeldaIns::MulW(_, r1, r2, r3) => {
                 *r1 = rename_wide(*r1, &mut rename_register);
                 *r2 = rename_wide(*r2, &mut rename_register);
@@ -482,37 +444,35 @@ impl Ins<Reg, Reg, Rc<str>> for TeldaIns {
             TeldaIns::Ja(_) |
             TeldaIns::Jbe(_) |
             TeldaIns::Jump(_) => (),
-            TeldaIns::LdiB(r, _) => *r = rename_byte(*r, rename_register),
-            TeldaIns::LdiW(r, _) => *r = rename_wide(*r, rename_register),
-            TeldaIns::JmpR(r) => *r = rename_wide(*r, rename_register),
-            TeldaIns::AddB(r1, _, _) => *r1 = rename_byte(*r1, rename_register),
-            TeldaIns::AddW(r1, _, _) => *r1 = rename_wide(*r1, rename_register),
-            TeldaIns::SubB(r1, _, _) => *r1 = rename_byte(*r1, rename_register),
-            TeldaIns::SubW(r1, _, _) => *r1 = rename_wide(*r1, rename_register),
-            TeldaIns::AndB(r1, _, _) => *r1 = rename_byte(*r1, rename_register),
-            TeldaIns::AndW(r1, _, _) => *r1 = rename_wide(*r1, rename_register),
-            TeldaIns::OrB(r1, _, _) => *r1 = rename_byte(*r1, rename_register),
-            TeldaIns::OrW(r1, _, _) => *r1 = rename_wide(*r1, rename_register),
-            TeldaIns::XorB(r1, _, _) => *r1 = rename_byte(*r1, rename_register),
-            TeldaIns::XorW(r1, _, _) => *r1 = rename_wide(*r1, rename_register),
-            TeldaIns::ShlB(r1, _, _) => *r1 = rename_byte(*r1, rename_register),
-            TeldaIns::ShlW(r1, _, _) => *r1 = rename_wide(*r1, rename_register),
-            TeldaIns::AsrB(r1, _, _) => *r1 = rename_byte(*r1, rename_register),
-            TeldaIns::AsrW(r1, _, _) => *r1 = rename_wide(*r1, rename_register),
-            TeldaIns::LsrB(r1, _, _) => *r1 = rename_byte(*r1, rename_register),
-            TeldaIns::LsrW(r1, _, _) => *r1 = rename_wide(*r1, rename_register),
-            TeldaIns::DivB(r1, r2, _, _) => {
-                *r1 = rename_byte(*r1, &mut rename_register);
-                *r2 = rename_byte(*r2, rename_register);
-            }
-            TeldaIns::DivW(r1, r2, _, _) => {
-                *r1 = rename_wide(*r1, &mut rename_register);
-                *r2 = rename_wide(*r2, rename_register);
-            }
+            TeldaIns::JmpR(r) |
+            TeldaIns::LdiW(r, _) |
+            TeldaIns::AddW(r, _, _) |
+            TeldaIns::AdcW(r, _, _) |
+            TeldaIns::SubW(r, _, _) |
+            TeldaIns::SbbW(r, _, _) |
+            TeldaIns::AndW(r, _, _) |
+            TeldaIns::OrW(r, _, _) |
+            TeldaIns::XorW(r, _, _) |
+            TeldaIns::ShlW(r, _, _) |
+            TeldaIns::AsrW(r, _, _) |
+            TeldaIns::LsrW(r, _, _) => *r = rename_wide(*r, rename_register),
+            TeldaIns::LdiB(r, _) |
+            TeldaIns::AddB(r, _, _) |
+            TeldaIns::AdcB(r, _, _) |
+            TeldaIns::SubB(r, _, _) |
+            TeldaIns::SbbB(r, _, _) |
+            TeldaIns::AndB(r, _, _) |
+            TeldaIns::OrB(r, _, _) |
+            TeldaIns::XorB(r, _, _) |
+            TeldaIns::ShlB(r, _, _) |
+            TeldaIns::AsrB(r, _, _) |
+            TeldaIns::LsrB(r, _, _) => *r = rename_byte(*r, rename_register),
+            TeldaIns::DivB(r1, r2, _, _) |
             TeldaIns::MulB(r1, r2, _, _) => {
                 *r1 = rename_byte(*r1, &mut rename_register);
                 *r2 = rename_byte(*r2, rename_register);
             }
+            TeldaIns::DivW(r1, r2, _, _) |
             TeldaIns::MulW(r1, r2, _, _) => {
                 *r1 = rename_wide(*r1, &mut rename_register);
                 *r2 = rename_wide(*r2, rename_register);

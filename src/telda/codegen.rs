@@ -463,11 +463,16 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                     let (dl, dh) = state.get_dwide(&dest);
                     let (t1l, t1h) = state.get_dwide(&t1);
                     let (t2l, t2h) = state.get_dwide(&t2);
+                    let temp1 = state.new_wide_reg();
+                    let temp2 = state.new_wide_reg();
+                    let temp3 = state.new_wide_reg();
+                    let temp4 = state.new_wide_reg();
 
-                    code.push(Ins::MulW(dh, dl, t1l, t2l));
-                    let temp = state.new_wide_reg();
-                    code.push(Ins::MulW(R0, temp, t1h, t2h));
-                    code.push(Ins::AddW(dh, dh, temp));
+                    code.push(Ins::MulW(temp1, dl, t1l, t2l));
+                    code.push(Ins::MulW(R0, temp2, t1l, t2h));
+                    code.push(Ins::MulW(R0, temp3, t1h, t2l));
+                    code.push(Ins::AddW(temp4, temp1, temp2));
+                    code.push(Ins::AdcW(dh, temp4, temp3));
                 }
                 (Binop::Mul, FlatType::Float) => unimplemented!(),
                 (Binop::Div, FlatType::I8 | FlatType::U8) => {
