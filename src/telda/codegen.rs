@@ -392,20 +392,8 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                     let (t1l, t1h) = state.get_dwide(&t1);
                     let (t2l, t2h) = state.get_dwide(&t2);
 
-                    // Store 0 in the high register whether we use it or not
-                    code.push(Ins::MoveW(dh, R0));
                     code.push(Ins::AddW(dl, t1l, t2l));
-
-                    // load `1` into `dh` unless the add set the overflow flag, if it didn't we jump down
-                    let add_high = state.new_label();
-                    code.push(Ins::Jno(Wi::Symbol(add_high.clone())));
-                    code.push(Ins::LdiW(dh, Wi::Constant(1)));
-
-                    code.push(Ins::Label(add_high));
-                    let temp = state.new_wide_reg();
-                    // TODO: use add with carry instruction when it is out
-                    code.push(Ins::AddW(temp, t1h, t2h));
-                    code.push(Ins::AddW(dh, dh, temp));
+                    code.push(Ins::AdcW(dh, t1h, t2h));
                 }
                 (Binop::Add, FlatType::Float) => unimplemented!(),
                 (Binop::Sub, FlatType::I8 | FlatType::U8) => {
@@ -427,20 +415,8 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                     let (t1l, t1h) = state.get_dwide(&t1);
                     let (t2l, t2h) = state.get_dwide(&t2);
 
-                    // Store 0 in the high register whether we use it or not
-                    code.push(Ins::MoveW(dh, R0));
                     code.push(Ins::SubW(dl, t1l, t2l));
-
-                    // load `1` into `dh` unless the sub set the overflow flag, if it didn't we jump down
-                    let sub_high = state.new_label();
-                    code.push(Ins::Jno(Wi::Symbol(sub_high.clone())));
-                    code.push(Ins::LdiW(dh, Wi::Constant(1)));
-
-                    code.push(Ins::Label(sub_high));
-                    let temp = state.new_wide_reg();
-                    // TODO: use sub with borrow instruction when it is out
-                    code.push(Ins::SubW(temp, t1h, t2h));
-                    code.push(Ins::SubW(dh, temp, dh));
+                    code.push(Ins::SbbW(dh, t1h, t2h));
                 }
                 (Binop::Sub, FlatType::Float) => unimplemented!(),
                 (Binop::Mul, FlatType::I8 | FlatType::U8) => {
@@ -511,7 +487,6 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                     let one = state.new_wide_reg();
                     let ones = state.new_wide_reg();
                     let (dl, dh) = state.get_dwide(&dest);
-                    let no_overflow = state.new_label();
                     // TODO: check if this is better than just subtracting by 1
                     code.extend([
                         Ins::LdiW(ones, Wi::Constant(0xffff)),
@@ -519,9 +494,7 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                         Ins::XorW(dh, dh, ones),
                         Ins::LdiW(one, Wi::Constant(1)),
                         Ins::AddW(dl, dl, one),
-                        Ins::Jno(Wi::Symbol(no_overflow.clone())),
-                        Ins::AddW(dh, dh, one),
-                        Ins::Label(no_overflow),
+                        Ins::AdcW(dh, dh, R0),
                     ]);
                 },
                 (Unop::Neg, FlatType::Float) => unimplemented!(),
