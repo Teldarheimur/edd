@@ -1,5 +1,4 @@
-extern fn blackbox(n: i32) unit;
-extern fn nothing() unit;
+include("std.ðs");
 
 fn empty() unit {
     {}
@@ -10,9 +9,13 @@ fn add(a: i32, b: i32) i32 {
     a + b
 }
 
-export
-fn sample() unit {
+export fn main() i16 {
     let a: i32 = 4;
     let b: i32 = 5;
-    blackbox(a + b);
+    puti32(a + b);
+    puts("\n");
+    puti32(a - b);
+    puts("\n");
+
+    0
 }
