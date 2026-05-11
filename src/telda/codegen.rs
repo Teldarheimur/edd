@@ -675,6 +675,9 @@ fn generate_fn(code: &mut Vec<Ins>, state: &mut FunctionState, lines: impl IntoI
                 // TODO: put the right value here to clean up objects stored in stack-space
                 code.push(Ins::Ret(Bi::Constant(0)));
             }
+            Line::SrcLink(loc) => code.push(
+                Ins::Comment(format!("{loc}").into())
+            ),
             Line::Panic(loc, msg) => {
                 let message_length = msg.len() as u16;
                 let message_label = state.get_string_label(msg);

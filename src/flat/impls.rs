@@ -334,6 +334,7 @@ impl Display for DisplayLine<'_> {
                 write!(f, "{} = {t} @STACK[{} + {}]", t1.display_with(locals), sv.display_with(stacks), t2.display_with(locals))
             }
             Line::Panic(loc, msg) => write!(f, "@PANIC({loc}, {msg})"),
+            Line::SrcLink(loc) => write!(f, "//: {loc}"),
         }
     }
 }

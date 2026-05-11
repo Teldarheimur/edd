@@ -24,6 +24,7 @@ fn get_only_one<R, I: Iterator<Item = R>>(mut iter: I) -> R {
 pub struct CompileOptions {
     parsed_hook: Option<fn(&self::parse::ast::Program)>,
     checked_hook: Option<fn(&self::ttype::ast::Program)>,
+    pub comment_original_source: bool,
 }
 
 pub fn compile(path: &Path, options: CompileOptions) -> Result<Program, Box<dyn Display>> {
@@ -35,7 +36,7 @@ pub fn compile(path: &Path, options: CompileOptions) -> Result<Program, Box<dyn 
     if let Some(hook) = options.checked_hook {
         hook(&program);
     }
-    let program = flatten(program);
+    let program = flatten(program, options.comment_original_source);
 
     Ok(program)
 }

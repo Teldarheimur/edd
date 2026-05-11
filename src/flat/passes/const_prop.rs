@@ -102,6 +102,7 @@ pub fn const_prop_pass(mut program: Program) -> Program {
             }
 
             match line {
+                Line::SrcLink(_) => (),
                 Line::SetConst(t, _, c) => stab.set(t.clone(), Value::Const(*c)),
                 Line::SetTo(t1, ty, t2) => {
                     let t1 = t1.clone();

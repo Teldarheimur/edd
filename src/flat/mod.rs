@@ -13,7 +13,7 @@ use self::{
     static_eval::compute_statics,
 };
 
-pub fn flatten(program: TypedProgram) -> Program {
+pub fn flatten(program: TypedProgram, emit_source_comments: bool) -> Program {
     let mut fn_exprs = HashMap::new();
     let mut fns = HashMap::new();
     let mut decl_exprs = Vec::new();
@@ -51,7 +51,7 @@ pub fn flatten(program: TypedProgram) -> Program {
     let mut statics = compute_statics(decl_exprs, external_symbols);
 
     for (name, body) in fn_exprs {
-        flatten_function(name, body, &mut statics, &mut fns);
+        flatten_function(name, body, &mut statics, &mut fns, emit_source_comments);
     }
 
     Program { fns, statics }
@@ -208,6 +208,7 @@ pub enum Line {
     Ret(Temp),
 
     Panic(Location, Box<str>),
+    SrcLink(Location),
 }
 impl Line {
     #[allow(non_snake_case)]

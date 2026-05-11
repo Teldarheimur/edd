@@ -19,11 +19,12 @@ pub fn flatten_function(
     body: Expr,
     statics: &mut Vec<StaticDecl>,
     fns: &mut HashMap<Global, Function>,
+    emit_source_comments: bool,
 ) {
     let (fn_name, mut function) = fns.remove_entry(&fn_name).unwrap();
 
     let ret_type = function.ret_type.clone();
-    let mut state = FlattenState::new(fn_name.inner(), &mut function, statics, fns);
+    let mut state = FlattenState::new(fn_name.inner(), &mut function, statics, fns, emit_source_comments);
     let place = state.new_temp("ret_val", ret_type.clone());
     flatten_expr(body, ret_type, place.clone(), &mut state);
     function.lines.push(Line::Ret(place));
@@ -67,6 +68,8 @@ pub fn flatten_type(t: Type) -> FlatType {
 }
 
 fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) {
+    let src_link = state.emit_source_comments
+        .then(|| Line::SrcLink(expr.location()));
     match expr {
         Expr::Ident(loc, name) => {
             let (named, stored_type) = state.lookup(name.clone());
@@ -383,7 +386,7 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
             let lambda_g = state.new_global("lambda");
             let f = Function::init(args, ret, false);
             state.fns.insert(lambda_g.clone(), f);
-            flatten_function(lambda_g.clone(), *body, state.statics, state.fns);
+            flatten_function(lambda_g.clone(), *body, state.statics, state.fns, state.emit_source_comments);
             state.add_code(Line::ReadGlobal(place, t, lambda_g));
         }
         Expr::Call(_, f_name, args) => {
@@ -483,6 +486,9 @@ fn flatten_expr(expr: Expr, t: FlatType, place: Temp, state: &mut FlattenState) 
 
             state.add_code(Line::SetBinop(place, op_t, Binop::Gte, tl, tr));
         }
+    }
+    if let Some(line) = src_link {
+        state.add_code(line);
     }
 }
 

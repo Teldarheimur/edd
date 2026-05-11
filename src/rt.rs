@@ -350,6 +350,7 @@ fn run_lines(lines: &[Line], state: &mut RuntimeState) -> Result<Value, RuntimeE
 
                 state.set_temp(dest.clone(), val);
             }
+            Line::SrcLink(_) => (),
             Line::Panic(loc, msg) => {
                 return Err(RuntimeError::Panic(loc.clone(), msg.clone()));
             }

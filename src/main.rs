@@ -30,6 +30,9 @@ struct Args {
     /// Emit flat IR
     emit_flat: bool,
     #[arg(long)]
+    /// Leave Ð code with generated code as comments
+    emit_source_comments: bool,
+    #[arg(long)]
     /// Emit telda code without register allocation
     dont_regalloc: bool,
     #[arg(long)]
@@ -72,6 +75,7 @@ fn main() -> ExitCode {
         emit_untyped,
         emit_typed,
         emit_flat,
+        emit_source_comments,
         dont_regalloc,
         dont_emit_comments,
         spill_all,
@@ -93,6 +97,9 @@ fn main() -> ExitCode {
         opt = opt.hook_type_checked(|p| {
             println!("Type checked:\n{p}\n");
         });
+    }
+    if emit_source_comments {
+        opt.comment_original_source = true;
     }
 
     let mut program = match compile(&path, opt) {

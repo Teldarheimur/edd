@@ -26,6 +26,7 @@ pub struct FlattenState<'a> {
     global_ticker: Ticker,
     function: &'a mut Function,
     epilogue: Vec<Line>,
+    pub emit_source_comments: bool,
 }
 impl<'a> FlattenState<'a> {
     pub fn new(
@@ -33,6 +34,7 @@ impl<'a> FlattenState<'a> {
         function: &'a mut Function,
         statics: &'a mut Vec<StaticDecl>,
         fns: &'a mut HashMap<Global, Function>,
+        emit_source_comments: bool,
     ) -> Self {
         Self {
             temp_types: iter::once(None)
@@ -53,6 +55,7 @@ impl<'a> FlattenState<'a> {
             label_ticker: Ticker::new(),
             global_ticker: Ticker::new(),
             epilogue: Vec::new(),
+            emit_source_comments,
         }
     }
     pub fn add_code(&mut self, line: Line) {
