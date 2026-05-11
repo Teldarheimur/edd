@@ -17,6 +17,8 @@ pub enum RuntimeError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+// It's not important
+#[allow(unpredictable_function_pointer_comparisons)]
 pub enum Value {
     Boolean(bool),
     U8(u8),
@@ -30,6 +32,7 @@ pub enum Value {
     Float(f64),
 
     Function(Rc<[Line]>),
+    /// Comparison of builtins is not reliable. that should be fine.
     BuiltinFn(fn(&[Value]) -> Value),
     Ref(Address),
     Struct(Rc<[Value]>),

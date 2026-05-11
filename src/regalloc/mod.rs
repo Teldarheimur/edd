@@ -45,7 +45,7 @@ pub struct CallingConvention<'a, P> {
 }
 
 impl<'a, P: Copy> CallingConvention<'a, P> {
-    fn allocator(&self) -> AllocatorInstance<P> {
+    fn allocator(&self) -> AllocatorInstance<'_, P> {
         let mut alloc = AllocatorInstance {
             regs_to_allocate: Vec::new(),
             conv: self,
